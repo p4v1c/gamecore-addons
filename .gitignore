@@ -1,0 +1,5 @@
+.venv/
+__pycache__/
+node_modules/
+addons/*/web/gamecore-nav.js
+addons/*/web/gamecore-nav.css

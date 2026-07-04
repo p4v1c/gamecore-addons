@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GameCore — ROM Manager</title>
+<link rel="stylesheet" href="gamecore-nav.css">
+<script src="gamecore-nav.js" defer></script>
+<style>
+/* The shared nav bar is fixed at the top — shrink the full-height panes. */
+body.gc-nav-present #sidebar,
+body.gc-nav-present #main { height: calc(100vh - 44px); }
+</style>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:        #0b0d12;
+  --surface:   #13161e;
+  --surface2:  #1c202c;
+  --surface3:  #252a38;
+  --border:    rgba(255,255,255,0.07);
+  --text:      #dde1ed;
+  --text2:     #7d8499;
+  --accent:    #5c7cfa;
+  --danger:    #f04040;
+  --success:   #40d480;
+  --radius:    10px;
+  --sidebar-w: 260px;
+  --font:      -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex;font-size:14px}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:3px}
+
+#sidebar{
+  width:var(--sidebar-w);min-width:var(--sidebar-w);height:100vh;
+  background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.sidebar-header{padding:24px 20px 16px;border-bottom:1px solid var(--border);flex-shrink:0}
+.sidebar-logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;letter-spacing:.3px;color:#fff}
+.sidebar-logo svg{color:var(--accent)}
+.sidebar-sub{margin-top:4px;font-size:11px;color:var(--text2);letter-spacing:.5px;text-transform:uppercase}
+.emu-list{flex:1;overflow-y:auto;padding:8px 0}
+.emu-item{
+  display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;
+  border-left:3px solid transparent;transition:background .15s,border-color .15s;
+  position:relative;user-select:none;
+}
+.emu-item:hover{background:var(--surface2)}
+.emu-item.active{background:var(--surface2);border-left-color:var(--emu-color,var(--accent))}
+.emu-item.active .emu-name{color:#fff}
+.emu-icon{width:32px;height:32px;border-radius:6px;object-fit:contain;background:var(--surface3);padding:3px;flex-shrink:0}
+.emu-info{flex:1;min-width:0}
+.emu-name{font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.emu-platform{font-size:11px;color:var(--text2);margin-top:1px}
+.emu-badge{
+  background:var(--surface3);color:var(--text2);font-size:11px;font-weight:600;
+  padding:2px 7px;border-radius:20px;flex-shrink:0;
+}
+.emu-item.active .emu-badge{background:var(--emu-color,var(--accent));color:#fff}
+
+#main{flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+.top-bar{
+  display:flex;align-items:center;justify-content:space-between;padding:18px 28px;
+  border-bottom:1px solid var(--border);flex-shrink:0;background:var(--surface);gap:16px;
+}
+.top-bar-left{display:flex;align-items:center;gap:14px}
+.platform-badge{font-size:12px;font-weight:600;padding:4px 12px;border-radius:20px;background:var(--emu-color,var(--accent));color:#fff;letter-spacing:.3px}
+.top-title{font-size:18px;font-weight:700;color:#fff}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border-radius:var(--radius);border:none;cursor:pointer;font-size:13px;font-weight:600;transition:opacity .15s,transform .1s}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{opacity:.88}
+.btn-outline{background:transparent;color:var(--text);border:1px solid var(--border)}
+.btn-outline:hover{background:var(--surface2);border-color:rgba(255,255,255,.15)}
+.content{flex:1;overflow-y:auto;padding:28px}
+
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;color:var(--text2);text-align:center}
+.empty-icon{width:72px;height:72px;border:2px dashed var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--text2)}
+.empty-title{font-size:15px;font-weight:600;color:var(--text)}
+.empty-sub{font-size:13px;max-width:280px;line-height:1.6}
+
+.games-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:24px}
+.game-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column;transition:border-color .15s,transform .15s;position:relative}
+.game-card:hover{border-color:var(--emu-color,var(--accent));transform:translateY(-2px)}
+.card-thumb{height:100px;background:linear-gradient(135deg,var(--surface2),var(--surface3));display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0;position:relative}
+.card-ext{position:absolute;bottom:6px;right:8px;font-size:10px;font-weight:700;letter-spacing:.5px;background:rgba(0,0,0,.6);color:var(--text2);padding:2px 6px;border-radius:4px}
+.card-body{padding:10px 12px;flex:1;display:flex;flex-direction:column;gap:4px}
+.card-name{font-size:12px;font-weight:600;color:var(--text);word-break:break-all;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card-size{font-size:11px;color:var(--text2);margin-top:auto}
+.card-del{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.7);color:#ff5555;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;opacity:0;transition:opacity .15s,background .15s}
+.game-card:hover .card-del{opacity:1}
+.card-del:hover{background:var(--danger);color:#fff}
+
+.drop-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:28px;text-align:center;color:var(--text2);cursor:pointer;transition:border-color .2s,background .2s;display:flex;flex-direction:column;align-items:center;gap:10px}
+.drop-zone:hover,.drop-zone.hover{border-color:var(--emu-color,var(--accent));background:rgba(92,124,250,.05);color:var(--text)}
+.drop-zone svg{opacity:.5}
+.drop-zone:hover svg,.drop-zone.hover svg{opacity:1}
+.drop-zone input{display:none}
+
+#drag-overlay{position:fixed;inset:0;background:rgba(11,13,18,.92);backdrop-filter:blur(6px);display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:100;pointer-events:none}
+#drag-overlay.visible{display:flex}
+.drag-overlay-box{width:420px;max-width:90vw;border:2px dashed var(--emu-color,var(--accent));border-radius:20px;padding:52px 40px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px;animation:pulse 1.5s ease-in-out infinite}
+.drag-overlay-box svg{color:var(--emu-color,var(--accent));opacity:.9}
+.drag-title{font-size:20px;font-weight:700;color:#fff}
+.drag-sub{font-size:14px;color:var(--text2)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(92,124,250,.3)}50%{box-shadow:0 0 0 12px rgba(92,124,250,0)}}
+
+#toasts{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:10px;z-index:200;width:340px}
+.toast{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;flex-direction:column;gap:8px;box-shadow:0 8px 32px rgba(0,0,0,.5);animation:slideIn .2s ease}
+@keyframes slideIn{from{transform:translateX(120%);opacity:0}to{transform:none;opacity:1}}
+.toast-row{display:flex;align-items:center;gap:10px}
+.toast-name{flex:1;font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.toast-state{font-size:11px;color:var(--text2)}
+.progress-bar{height:3px;background:var(--surface3);border-radius:2px;overflow:hidden}
+.progress-fill{height:100%;background:var(--emu-color,var(--accent));border-radius:2px;transition:width .1s}
+
+#welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--text2);text-align:center}
+#welcome h2{font-size:22px;color:var(--text);font-weight:700}
+#welcome p{font-size:14px;max-width:320px;line-height:1.7}
+
+.spinner{width:32px;height:32px;border:3px solid var(--surface3);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Overlay modal */
+#overlay-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);z-index:300;display:none;align-items:center;justify-content:center}
+#overlay-modal.open{display:flex}
+.om-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:560px;max-width:95vw;overflow:hidden;display:flex;flex-direction:column}
+.om-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--border)}
+.om-title{font-size:16px;font-weight:700;color:#fff}
+.om-close{background:none;border:none;color:var(--text2);cursor:pointer;font-size:22px;line-height:1;padding:0 4px;transition:color .15s}
+.om-close:hover{color:#fff}
+.om-body{padding:24px;display:flex;flex-direction:column;gap:20px}
+.om-preview{width:100%;aspect-ratio:16/9;border-radius:10px;border:1px solid var(--border);background:var(--surface2);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.om-preview img{width:100%;height:100%;object-fit:contain}
+.om-preview .om-none{color:var(--text2);font-size:13px;display:flex;flex-direction:column;align-items:center;gap:8px}
+.om-drop{border:2px dashed var(--border);border-radius:10px;padding:22px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--text2)}
+.om-drop:hover,.om-drop.hover{border-color:var(--emu-color,var(--accent));background:rgba(92,124,250,.05);color:var(--text)}
+.om-drop svg{opacity:.6}
+.om-drop input{display:none}
+.om-footer{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-top:1px solid var(--border)}
+.om-hint{font-size:12px;color:var(--text2)}
+.btn-danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}
+.btn-danger:hover{background:var(--danger);color:#fff}
+</style>
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="2" y="6" width="20" height="12" rx="2"/>
+        <path d="M6 10h4M8 8v4"/>
+        <circle cx="16" cy="10" r="1" fill="currentColor"/>
+        <circle cx="18" cy="12" r="1" fill="currentColor"/>
+      </svg>
+      GameCore
+    </div>
+    <div class="sidebar-sub" id="sidebar-sub">ROM Manager</div>
+  </div>
+  <div class="emu-list" id="emu-list">
+    <div style="padding:40px 20px;text-align:center"><div class="spinner" style="margin:0 auto"></div></div>
+  </div>
+</aside>
+
+<main id="main">
+  <div class="top-bar" id="top-bar" style="display:none">
+    <div class="top-bar-left">
+      <span class="platform-badge" id="top-badge">–</span>
+      <span class="top-title" id="top-title">Select an emulator</span>
+    </div>
+    <button class="btn btn-outline" id="btn-overlay" onclick="openOverlayModal()" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 8h10M7 12h6"/></svg>
+      Overlay
+    </button>
+    <button class="btn btn-primary" id="btn-add" onclick="triggerFileInput()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      Add ROMs
+    </button>
+    <input type="file" id="file-input" multiple style="display:none" onchange="handleFileInput(this)">
+  </div>
+
+  <div class="content" id="content">
+    <div id="welcome">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".3">
+        <rect x="2" y="6" width="20" height="12" rx="2"/>
+        <path d="M6 10h4M8 8v4"/>
+        <circle cx="16" cy="10" r="1" fill="currentColor"/>
+        <circle cx="18" cy="12" r="1" fill="currentColor"/>
+      </svg>
+      <h2>Select an emulator</h2>
+      <p>Choose a platform on the left to view and manage your ROM library.</p>
+    </div>
+  </div>
+</main>
+
+<div id="drag-overlay">
+  <div class="drag-overlay-box" id="drag-box">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+    <div class="drag-title">Drop to add ROMs</div>
+    <div class="drag-sub" id="drag-sub-text">Select an emulator first</div>
+  </div>
+</div>
+
+<!-- Overlay modal -->
+<div id="overlay-modal">
+  <div class="om-box">
+    <div class="om-header">
+      <span class="om-title" id="om-title">Overlay — —</span>
+      <button class="om-close" onclick="closeOverlayModal()">×</button>
+    </div>
+    <div class="om-body">
+      <div class="om-preview" id="om-preview">
+        <div class="om-none" id="om-none">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 8h10M7 12h6"/></svg>
+          No overlay set
+        </div>
+        <img id="om-img" src="" alt="" style="display:none" onload="omImgLoaded()" onerror="omImgError()">
+      </div>
+      <label class="om-drop" id="om-drop"
+             ondragover="omDzOver(event,this)" ondragleave="omDzLeave(this)" ondrop="omDzDrop(event)">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <span style="font-size:13px;font-weight:600">Drop a PNG here or click to browse</span>
+        <span style="font-size:12px">Recommended: 1920×1080 PNG with transparent center</span>
+        <input type="file" accept="image/png,image/jpeg,image/webp" onchange="omFileInput(this)">
+      </label>
+    </div>
+    <div class="om-footer">
+      <span class="om-hint" id="om-hint"></span>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-danger" id="om-delete" onclick="deleteOverlay()" style="display:none">Remove</button>
+        <button class="btn btn-outline" onclick="closeOverlayModal()">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+// ROM API is served by this addon (same origin); icons and overlays live on
+// the GameCore core. Same convention as gamecore-nav.js (?gcport override).
+const CORE = location.protocol + '//' + location.hostname + ':' +
+  (new URLSearchParams(location.search).get('gcport') ||
+   localStorage.getItem('gamecore.corePort') || '8765');
+
+let emulators = [];
+let activeEmu = null;
+let dragDepth = 0;
+
+const EXT_EMOJI = {
+  ISO:'💿', BIN:'💿', CUE:'💿',
+  XCI:'🎮', NSP:'🎮', PKG:'📦',
+  N64:'🎮', Z64:'🎮', V64:'🎮',
+  NDS:'🎮', GBA:'🎮', GBC:'🎮', GB:'🎮',
+  CSO:'💿', RVZ:'💿', GCM:'💿',
+  WUX:'📦', RPX:'📦',
+  ZIP:'🗜️',
+};
+
+function getEmoji(ext) { return EXT_EMOJI[ext?.toUpperCase()] || '🎮'; }
+
+function setAccentColor(color) {
+  document.documentElement.style.setProperty('--emu-color', color);
+}
+
+async function loadEmulators() {
+  const res = await fetch('/api/emulators');
+  emulators = await res.json();
+  renderSidebar();
+}
+
+function renderSidebar() {
+  const list = document.getElementById('emu-list');
+  const totalRoms = emulators.reduce((s, e) => s + e.romCount, 0);
+  document.getElementById('sidebar-sub').textContent =
+    `${totalRoms} ROM${totalRoms !== 1 ? 's' : ''} · ${emulators.length} platforms`;
+
+  list.innerHTML = emulators.map(e => `
+    <div class="emu-item" id="emu-${e.id}" onclick="selectEmulator('${e.id}')"
+         style="--emu-color:${e.color}">
+      <img class="emu-icon" src="${CORE}/${e.iconPath}" alt="${e.platform}" onerror="this.style.display='none'">
+      <div class="emu-info">
+        <div class="emu-name">${e.platform}</div>
+        ${e.totalSize ? `<div class="emu-platform">${e.totalSize}</div>` : ''}
+      </div>
+      <span class="emu-badge" id="badge-${e.id}">${e.romCount}</span>
+    </div>
+  `).join('');
+}
+
+async function selectEmulator(id) {
+  activeEmu = emulators.find(e => e.id === id);
+  if (!activeEmu) return;
+
+  document.querySelectorAll('.emu-item').forEach(el => el.classList.remove('active'));
+  const item = document.getElementById(`emu-${id}`);
+  item.classList.add('active');
+
+  setAccentColor(activeEmu.color);
+
+  document.getElementById('top-bar').style.display = '';
+  document.getElementById('btn-overlay').style.display = '';
+  document.getElementById('top-badge').textContent = activeEmu.platform;
+  document.getElementById('top-title').textContent = `${activeEmu.platform} Library`;
+  const extList = (activeEmu.extensions || []).join('  ');
+  document.getElementById('drag-sub-text').innerHTML =
+    `Drop files for <strong>${activeEmu.platform}</strong><br>
+     <span style="font-size:12px;opacity:.7">${escHtml(extList)}</span>`;
+
+  await loadRoms(id);
+}
+
+async function loadRoms(emuId) {
+  const content = document.getElementById('content');
+  content.innerHTML = '<div style="display:flex;justify-content:center;padding:60px"><div class="spinner"></div></div>';
+
+  const res = await fetch(`/api/roms/${emuId}`);
+  const roms = await res.json();
+
+  const badge = document.getElementById(`badge-${emuId}`);
+  if (badge) badge.textContent = roms.length;
+
+  if (roms.length === 0) {
+    content.innerHTML = `
+      <div class="empty-state" style="height:auto;padding:60px 0">
+        <div class="empty-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="empty-title">No ROMs yet</div>
+        <div class="empty-sub">Drag &amp; drop ROM files here, or click <strong>Add ROMs</strong> above.</div>
+      </div>
+      ${dropZoneHTML()}
+    `;
+  } else {
+    content.innerHTML = `
+      <div class="games-grid">${roms.map(r => gameCardHTML(emuId, r)).join('')}</div>
+      ${dropZoneHTML()}
+    `;
+  }
+}
+
+function gameCardHTML(emuId, rom) {
+  return `
+    <div class="game-card">
+      <div class="card-thumb">
+        ${getEmoji(rom.ext)}
+        <span class="card-ext">${rom.ext}</span>
+      </div>
+      <div class="card-body">
+        <div class="card-name">${escHtml(rom.name)}</div>
+        <div class="card-size">${rom.sizeHuman}</div>
+      </div>
+      <button class="card-del" title="Delete" onclick="deleteRom('${emuId}','${escAttr(rom.name)}',this)">×</button>
+    </div>
+  `;
+}
+
+function dropZoneHTML() {
+  const exts = activeEmu ? (activeEmu.extensions || []).join('  ') : '';
+  return `
+    <label class="drop-zone" id="drop-zone-inner"
+           ondragover="dzOver(event,this)" ondragleave="dzLeave(this)" ondrop="dzDrop(event)">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <span style="font-size:13px;font-weight:600">Drag &amp; drop ROMs here</span>
+      <span style="font-size:12px;color:var(--text2)">or click to browse files</span>
+      ${exts ? `<span style="font-size:11px;color:var(--text2);letter-spacing:.3px">${escHtml(exts)}</span>` : ''}
+      <input type="file" multiple onchange="handleFileInput(this)">
+    </label>
+  `;
+}
+
+async function deleteRom(emuId, filename, btn) {
+  if (!confirm(`Delete "${filename}"?`)) return;
+  btn.disabled = true;
+  btn.textContent = '…';
+  const res = await fetch(`/api/roms/${emuId}/${encodeURIComponent(filename)}`, {method:'DELETE'});
+  if (res.ok) {
+    btn.closest('.game-card').remove();
+    const grid = document.querySelector('.games-grid');
+    if (grid && grid.children.length === 0) await loadRoms(emuId);
+    const badge = document.getElementById(`badge-${emuId}`);
+    if (badge) badge.textContent = Math.max(0, parseInt(badge.textContent) - 1);
+  } else {
+    btn.textContent = '×';
+    btn.disabled = false;
+    alert('Delete failed.');
+  }
+}
+
+function triggerFileInput() {
+  if (!activeEmu) { alert('Select an emulator first.'); return; }
+  document.getElementById('file-input').click();
+}
+
+function handleFileInput(input) {
+  if (!activeEmu) { alert('Select an emulator first.'); return; }
+  uploadFiles(Array.from(input.files));
+  input.value = '';
+}
+
+function uploadFiles(files) {
+  if (!activeEmu || !files.length) return;
+  files.forEach(f => uploadOne(f, activeEmu.id));
+}
+
+function uploadOne(file, emuId) {
+  const toastId = `toast-${Date.now()}-${Math.random()}`;
+  const toastEl = document.createElement('div');
+  toastEl.className = 'toast';
+  toastEl.id = toastId;
+  toastEl.innerHTML = `
+    <div class="toast-row">
+      <span class="toast-name" title="${escHtml(file.name)}">${escHtml(file.name)}</span>
+      <span class="toast-state" id="${toastId}-state">0%</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="${toastId}-fill" style="width:0"></div></div>
+  `;
+  document.getElementById('toasts').appendChild(toastEl);
+
+  const xhr = new XMLHttpRequest();
+  const form = new FormData();
+  form.append('file', file);
+
+  xhr.upload.onprogress = e => {
+    if (!e.lengthComputable) return;
+    const pct = Math.round(e.loaded / e.total * 100);
+    document.getElementById(`${toastId}-fill`).style.width = pct + '%';
+    document.getElementById(`${toastId}-state`).textContent = pct + '%';
+  };
+
+  xhr.onload = () => {
+    const stateEl = document.getElementById(`${toastId}-state`);
+    const fillEl  = document.getElementById(`${toastId}-fill`);
+    if (xhr.status === 200) {
+      stateEl.textContent = 'Done';
+      stateEl.style.color = 'var(--success)';
+      fillEl.style.width = '100%';
+      fillEl.style.background = 'var(--success)';
+      if (activeEmu && activeEmu.id === emuId) loadRoms(emuId);
+      setTimeout(() => toastEl.remove(), 3000);
+    } else {
+      stateEl.textContent = 'Failed';
+      stateEl.style.color = 'var(--danger)';
+      fillEl.style.background = 'var(--danger)';
+      setTimeout(() => toastEl.remove(), 5000);
+    }
+  };
+
+  xhr.onerror = () => {
+    document.getElementById(`${toastId}-state`).textContent = 'Error';
+    setTimeout(() => toastEl.remove(), 5000);
+  };
+
+  xhr.open('POST', `/api/roms/${emuId}/upload`);
+  xhr.send(form);
+}
+
+function dzOver(e, el) { e.preventDefault(); el.classList.add('hover'); }
+function dzLeave(el) { el.classList.remove('hover'); }
+function dzDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone-inner')?.classList.remove('hover');
+  uploadFiles(Array.from(e.dataTransfer.files));
+}
+
+document.addEventListener('dragenter', e => {
+  if (!e.dataTransfer.types.includes('Files')) return;
+  dragDepth++;
+  document.getElementById('drag-overlay').classList.add('visible');
+});
+document.addEventListener('dragleave', e => {
+  dragDepth--;
+  if (dragDepth <= 0) { dragDepth = 0; document.getElementById('drag-overlay').classList.remove('visible'); }
+});
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  dragDepth = 0;
+  document.getElementById('drag-overlay').classList.remove('visible');
+  const files = Array.from(e.dataTransfer.files);
+  if (files.length) {
+    if (!activeEmu) { alert('Select an emulator first.'); return; }
+    uploadFiles(files);
+  }
+});
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) { return String(s).replace(/'/g,"\\'"); }
+
+// ── Overlay modal ──────────────────────────────────────────────────────────────
+function openOverlayModal() {
+  if (!activeEmu) return;
+  document.getElementById('om-title').textContent = `Overlay — ${activeEmu.platform}`;
+  document.getElementById('overlay-modal').classList.add('open');
+  omLoadPreview();
+}
+
+function closeOverlayModal() {
+  document.getElementById('overlay-modal').classList.remove('open');
+}
+
+function omLoadPreview() {
+  const img = document.getElementById('om-img');
+  img.src = `${CORE}/assets/overlays/${activeEmu.id}.png?t=${Date.now()}`;
+  img.style.display = '';
+  document.getElementById('om-none').style.display = 'none';
+  document.getElementById('om-hint').textContent = '';
+}
+
+function omImgLoaded() {
+  document.getElementById('om-none').style.display = 'none';
+  document.getElementById('om-img').style.display = '';
+  document.getElementById('om-delete').style.display = '';
+  document.getElementById('om-hint').textContent = `/assets/overlays/${activeEmu.id}.png`;
+}
+
+function omImgError() {
+  document.getElementById('om-img').style.display = 'none';
+  document.getElementById('om-none').style.display = '';
+  document.getElementById('om-delete').style.display = 'none';
+  document.getElementById('om-hint').textContent = 'No overlay configured for this emulator';
+}
+
+function omDzOver(e, el) { e.preventDefault(); el.classList.add('hover'); }
+function omDzLeave(el) { el.classList.remove('hover'); }
+function omDzDrop(e) {
+  e.preventDefault();
+  document.getElementById('om-drop').classList.remove('hover');
+  const file = e.dataTransfer.files[0];
+  if (file) omUpload(file);
+}
+function omFileInput(input) {
+  const file = input.files[0];
+  if (file) omUpload(file);
+  input.value = '';
+}
+
+async function omUpload(file) {
+  const hint = document.getElementById('om-hint');
+  hint.textContent = 'Uploading…';
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${CORE}/api/overlays/${activeEmu.id}`, { method: 'POST', body: form });
+  if (res.ok) {
+    hint.textContent = 'Saved!';
+    omLoadPreview();
+  } else {
+    hint.textContent = 'Upload failed.';
+  }
+}
+
+async function deleteOverlay() {
+  if (!confirm('Remove the overlay for this emulator?')) return;
+  const res = await fetch(`${CORE}/api/overlays/${activeEmu.id}`, { method: 'DELETE' });
+  if (res.ok) omImgError();
+}
+
+document.getElementById('overlay-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('overlay-modal')) closeOverlayModal();
+});
+
+loadEmulators();
+</script>
+</body>
+</html>

@@ -40,7 +40,7 @@ site with sections — users never see ports.
 
 | addon | type | port | description |
 |-------|------|------|-------------|
-| *(coming)* rom-manager   | web | 8770 | Upload ROMs from the browser (drag & drop per system) |
+| [rom-manager](addons/rom-manager) | web | 8770 | Upload ROMs from the browser (drag & drop per system) |
 | *(coming)* rpcs3-manager | web | 8771 | Configure RPCS3 games remotely (per-game config, patches) |
 
 Ports 8770–8799 are reserved for addons; each addon declares its own in `addon.json`.

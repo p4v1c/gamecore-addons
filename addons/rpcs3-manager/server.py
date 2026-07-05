@@ -7,11 +7,15 @@ patch_config.yml). Every write is preceded by a timestamped .bak and all
 YAML goes through the string-preserving ryaml module — RPCS3 files contain
 scalars ("16:9", "01.10") that a naive round-trip would corrupt.
 """
+import asyncio
 import datetime
+import glob
 import logging
 import os
 import re
 import shutil
+import subprocess
+import time
 from pathlib import Path
 
 import uvicorn
@@ -26,8 +30,11 @@ import sfo
 from schema import SCHEMA, FIELD_BY_ID
 
 ADDON_DIR = Path(__file__).parent
+GAMECORE_PATH = Path(os.environ.get("GAMECORE_PATH", "/opt/GameCore"))
 PORT = int(os.environ.get("ADDON_PORT", 8771))
 _SERIAL_RE = re.compile(r"^[A-Z0-9]{9}$")
+# The RPCS3 binary — overridable; defaults to the GameCore box layout.
+RPCS3_BIN = os.environ.get("RPCS3_BIN", str(GAMECORE_PATH / "lib" / "rpcs3"))
 
 log = logging.getLogger("rpcs3-manager")
 
@@ -521,6 +528,131 @@ async def upload_patch(file: UploadFile = File(...)):
     backup(path)
     path.write_text(ryaml.dump(existing))
     return {"ok": True, "patches": count, "merged": merged, "file": path.name}
+
+
+# ── .pkg install (game updates / DLC) ─────────────────────────────────────────
+# RPCS3 refuses to install a pkg in --no-gui mode ("Cannot perform installation
+# in no-gui mode!") and this build ships no offscreen Qt plugin, so a real X
+# display is required. On a GameCore box that's the TV — we discover it exactly
+# like gamecore-ui.service does. A tiny progress dialog shows on the screen.
+
+def _discover_display() -> dict | None:
+    """Return env (DISPLAY + XAUTHORITY) for the box's active X session, or None."""
+    if os.environ.get("DISPLAY"):
+        env = {"DISPLAY": os.environ["DISPLAY"]}
+        if os.environ.get("XAUTHORITY"):
+            env["XAUTHORITY"] = os.environ["XAUTHORITY"]
+        return env
+    xauths = glob.glob(f"/run/user/{os.getuid()}/xauth_*")
+    xauth = xauths[0] if xauths else None
+    for disp in (":1", ":0", ":2"):
+        env = {"DISPLAY": disp}
+        if xauth:
+            env["XAUTHORITY"] = xauth
+        try:
+            r = subprocess.run(["xdpyinfo", "-display", disp], env={**os.environ, **env},
+                               capture_output=True, timeout=5)
+            if r.returncode == 0:
+                return env
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            # no xdpyinfo — trust a probable display so install can still be tried
+            return env
+    return None
+
+
+def _hdd_snapshot() -> dict:
+    game = config_dir() / "dev_hdd0" / "game"
+    if not game.is_dir():
+        return {}
+    return {d.name: d.stat().st_mtime for d in game.iterdir() if d.is_dir()}
+
+
+# One install at a time; the frontend polls this for the outcome.
+_pkg_job = {"state": "idle", "file": "", "installed": [], "error": ""}
+
+
+async def _watch_install(proc, dest: Path, before: dict) -> None:
+    """Detect the install landing in dev_hdd0/game, close RPCS3 (it stays open
+    after --installpkg), clean the staged file. Runs detached from the request."""
+    installed: list[str] = []
+    deadline = time.monotonic() + 600  # 10 min cap for large updates
+    while time.monotonic() < deadline:
+        await asyncio.sleep(2)
+        after = _hdd_snapshot()
+        installed = [n for n, m in after.items() if n not in before or m > before.get(n, 0)]
+        if installed:
+            await asyncio.sleep(3)  # let RPCS3 finish flushing files
+            after = _hdd_snapshot()
+            installed = [n for n, m in after.items() if n not in before or m > before.get(n, 0)]
+            break
+        if proc.poll() is not None:  # RPCS3 closed (e.g. user dismissed an error)
+            break
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, lambda: proc.wait(10))
+        except Exception:
+            proc.kill()
+    dest.unlink(missing_ok=True)
+    if installed:
+        _pkg_job.update(state="done", installed=sorted(installed), error="")
+    else:
+        _pkg_job.update(state="error", installed=[],
+                        error="no game data changed — the .pkg may be invalid, encrypted "
+                              "(needs a .rap license) or already installed")
+
+
+@app.get("/api/pkg/status")
+def pkg_status():
+    return _pkg_job
+
+
+@app.post("/api/pkg/install")
+async def install_pkg(file: UploadFile = File(...)):
+    name = Path(file.filename or "").name
+    if not name.lower().endswith(".pkg"):
+        raise HTTPException(415, "not a .pkg file")
+    if not Path(RPCS3_BIN).exists():
+        raise HTTPException(503, f"RPCS3 binary not found at {RPCS3_BIN}")
+    if _pkg_job["state"] == "running":
+        raise HTTPException(409, "a .pkg install is already running")
+
+    disp = _discover_display()
+    if disp is None:
+        raise HTTPException(503, "no active screen on the box — a .pkg install needs "
+                                 "RPCS3's window; turn on the TV/box screen first")
+
+    staging = config_dir() / "pkg_staging"
+    staging.mkdir(parents=True, exist_ok=True)
+    dest = staging / re.sub(r"[^\w.\-]", "_", name)
+    with dest.open("wb") as out:
+        while chunk := await file.read(1 << 20):
+            out.write(chunk)
+
+    before = _hdd_snapshot()
+    try:
+        proc = subprocess.Popen(
+            [RPCS3_BIN, "--installpkg", str(dest)],
+            env={**os.environ, **disp},
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception as e:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(500, f"could not launch RPCS3: {e}")
+
+    _pkg_job.update(state="running", file=name, installed=[], error="")
+    asyncio.create_task(_finish_job(proc, dest, before))
+    # Return immediately — the progress dialog shows on the box screen, the
+    # frontend polls /api/pkg/status for the outcome.
+    return {"ok": True, "state": "running", "file": name}
+
+
+async def _finish_job(proc, dest, before):
+    try:
+        await _watch_install(proc, dest, before)
+    except Exception as e:
+        _pkg_job.update(state="error", error=str(e))
 
 
 app.mount("/", StaticFiles(directory=str(ADDON_DIR / "web"), html=True), name="web")

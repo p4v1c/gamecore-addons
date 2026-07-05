@@ -272,6 +272,58 @@ async function loadConfig() {
   renderConfig();
 }
 
+function pkgZoneHTML() {
+  return `
+    <label class="drop-zone" id="pkg-dz" style="padding:16px;margin-bottom:18px"
+           ondragover="event.preventDefault();this.classList.add('hover')"
+           ondragleave="this.classList.remove('hover')" ondrop="dropPkg(event)">
+      <span style="font-size:13px;font-weight:600">📦 Install a .pkg (game update / DLC)</span>
+      <span style="font-size:12px">Runs RPCS3 on the box's screen to install it — no need to open the emulator yourself</span>
+      <input type="file" accept=".pkg" onchange="uploadPkg(this.files[0]);this.value=''">
+    </label>`;
+}
+
+function dropPkg(e) {
+  e.preventDefault();
+  $('pkg-dz')?.classList.remove('hover');
+  const f = e.dataTransfer.files[0];
+  if (f) uploadPkg(f);
+}
+
+async function uploadPkg(file) {
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.pkg')) { toast('Not a .pkg file', true); return; }
+  const dz = $('pkg-dz');
+  if (dz) dz.style.opacity = '.5';
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const r = await fetch('/api/pkg/install', { method: 'POST', body: form });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || r.status);
+    toast(`Uploading done — RPCS3 is installing ${file.name} on the box screen…`);
+    pollPkg();
+  } catch (e) {
+    if (dz) dz.style.opacity = '1';
+    toast(`Install failed: ${e.message}`, true);
+  }
+}
+
+async function pollPkg() {
+  try {
+    const s = await jget('/api/pkg/status');
+    if (s.state === 'running') { setTimeout(pollPkg, 3000); return; }
+    const dz = $('pkg-dz'); if (dz) dz.style.opacity = '1';
+    if (s.state === 'done') {
+      toast(`Installed: ${s.installed.join(', ')} — game list refreshed`);
+      loadGames();
+      if (active) loadConfig();
+    } else if (s.state === 'error') {
+      toast(`Install failed: ${s.error}`, true);
+    }
+  } catch (e) { setTimeout(pollPkg, 3000); }
+}
+
 function renderConfig() {
   const banner = cfgState.exists
     ? `<div class="banner custom"><span>● Custom configuration — this game overrides the global settings.</span>
@@ -285,7 +337,7 @@ function renderConfig() {
       <div class="fields">${grp.fields.map(fieldHTML).join('')}</div>
     </div>`).join('');
 
-  $('content').innerHTML = banner + groups + `
+  $('content').innerHTML = pkgZoneHTML() + banner + groups + `
     <div class="save-bar">
       <span id="dirty-count" style="font-size:12px;color:var(--text2)"></span>
       <button class="btn btn-outline" onclick="loadConfig()">Discard</button>

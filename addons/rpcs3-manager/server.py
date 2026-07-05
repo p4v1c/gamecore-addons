@@ -440,7 +440,10 @@ async def toggle_patch(serial: str, body: ToggleBody):
 
 
 def _validate_patch_yaml(tree) -> int:
-    """Return the number of patch entries; raise on structural problems."""
+    """Count real patch entries (a 'Patch' list + a 'Games' map). Tolerant on
+    purpose: the official database also carries helper entries (Config Values
+    definitions…) that are not patches — only a file with ZERO patches or a
+    wrong structure is rejected."""
     if not isinstance(tree, dict):
         raise HTTPException(400, "not a YAML mapping")
     if "Version" not in tree:
@@ -449,19 +452,45 @@ def _validate_patch_yaml(tree) -> int:
         raise HTTPException(400, f"unsupported patch engine version: {tree['Version']}")
     count = 0
     for hash_, patches in tree.items():
-        if hash_ in _META_KEYS:
+        if hash_ in _META_KEYS or not isinstance(patches, dict):
             continue
-        if not isinstance(patches, dict):
-            raise HTTPException(400, f"'{hash_}' must contain patches")
-        for name, entry in patches.items():
-            if not isinstance(entry, dict) or not isinstance(entry.get("Patch"), list):
-                raise HTTPException(400, f"patch '{name}' has no 'Patch' list")
-            if not isinstance(entry.get("Games"), dict):
-                raise HTTPException(400, f"patch '{name}' has no 'Games' map")
-            count += 1
+        for entry in patches.values():
+            if isinstance(entry, dict) and isinstance(entry.get("Patch"), list) \
+                    and isinstance(entry.get("Games"), dict):
+                count += 1
     if count == 0:
         raise HTTPException(400, "no patch found in file")
     return count
+
+
+# Same source as RPCS3's own "Download latest patches" button
+# (rpcs3qt/patch_manager_dialog.cpp) — full official database, saved verbatim.
+_PATCH_DB_URL = "https://rpcs3.net/compatibility?patch&api=v1&v=1.2"
+
+
+@app.post("/api/patches/download-official")
+def download_official_patches():
+    import json as _json
+    import urllib.request
+    try:
+        req = urllib.request.Request(_PATCH_DB_URL, headers={"User-Agent": "GameCore rpcs3-manager"})
+        body = urllib.request.urlopen(req, timeout=60).read().decode("utf-8", "replace")
+        # JSON envelope: {"return_code": 0, "version": "1.2", "sha256": …, "patch": "<yaml>"}
+        envelope = _json.loads(body)
+        if envelope.get("return_code") != 0 or not envelope.get("patch"):
+            raise ValueError(f"return_code={envelope.get('return_code')}")
+        raw = envelope["patch"]
+    except Exception as e:
+        raise HTTPException(502, f"rpcs3.net patch API failed: {e}")
+    try:
+        count = _validate_patch_yaml(ryaml.load(raw))
+    except HTTPException as e:
+        raise HTTPException(502, f"unexpected server response: {e.detail}")
+    path = config_dir() / "patches" / "patch.yml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    backup(path)
+    path.write_text(raw)  # verbatim — no re-emit needed for a full replacement
+    return {"ok": True, "patches": count, "file": path.name}
 
 
 @app.post("/api/patches/upload")

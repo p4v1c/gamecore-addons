@@ -364,10 +364,15 @@ async function loadPatches() {
       <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
       </svg>
-      <span style="font-size:13px;font-weight:600">Import a patch file (patch.yml)</span>
-      <span style="font-size:12px">Validated then merged into imported_patch.yml — get patches from the RPCS3 wiki</span>
+      <span style="font-size:13px;font-weight:600">Import a patch file (.yml)</span>
+      <span style="font-size:12px">Community patches from the RPCS3 wiki / Discord — validated then merged into imported_patch.yml</span>
       <input type="file" accept=".yml,.yaml" onchange="uploadPatch(this.files[0]);this.value=''">
-    </label>`;
+    </label>
+    <div style="display:flex;justify-content:flex-end;margin:-12px 0 20px">
+      <button class="btn btn-outline" id="btn-dl-official" onclick="downloadOfficial(this)">
+        ⬇ Update official patch database (rpcs3.net)
+      </button>
+    </div>`;
 
   // one card per patch name; inside, one toggle per game version.
   // Works with GLOBAL indices into `patches` so the toggles stay correct.
@@ -454,6 +459,20 @@ function dropPatch(e) {
   $('patch-dz').classList.remove('hover');
   const f = e.dataTransfer.files[0];
   if (f) uploadPatch(f);
+}
+
+async function downloadOfficial(btn) {
+  btn.disabled = true; btn.textContent = '⏳ Downloading…';
+  try {
+    const r = await fetch('/api/patches/download-official', { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || r.status);
+    toast(`Official database updated — ${d.patches} patches (backup kept)`);
+    loadPatches();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = '⬇ Update official patch database (rpcs3.net)';
+    toast(`Download failed: ${e.message}`, true);
+  }
 }
 
 async function uploadPatch(file) {

@@ -212,6 +212,14 @@ async function loadGames() {
           ${g.missing ? '<span style="color:var(--warn)" title="Game folder deleted — leftover games.yml entry">⚠ missing</span>' : ''}</div>
       </div>
     </div>`).join('') || '<div class="empty">No PS3 game found</div>';
+
+  // deep links: ?game=BCES01670&tab=patches (used by external UIs / bookmarks)
+  const qp = new URLSearchParams(location.search);
+  const g = qp.get('game');
+  if (g && !active && games.some(x => x.serial === g)) {
+    if (qp.get('tab') === 'patches') tab = 'patches';
+    selectGame(g);
+  }
 }
 
 async function selectGame(serial) {

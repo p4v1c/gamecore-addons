@@ -10,6 +10,7 @@ import fnmatch
 import json
 import logging
 import os
+import shutil
 from pathlib import Path
 
 import httpx
@@ -46,17 +47,30 @@ def matches_ext(filename: str, extensions: list[str]) -> bool:
     return any(fnmatch.fnmatch(name, p.lower()) for p in extensions)
 
 
-def iter_rom_files(roms_path: Path, extensions: list[str]):
+def iter_rom_files(roms_path: Path, extensions: list[str], scan_dirs: bool = False):
+    """Yield ROM entries. Most systems = files matching `extensions`; systems
+    with scanDirs (PS3 disc games…) = folders. Mirrors the core rom_scanner."""
     if not roms_path.exists():
         return
     for f in sorted(roms_path.iterdir(), key=lambda x: x.name.lower()):
         if f.name.startswith(".") or "example" in f.name.lower():
             continue
-        if not f.is_file():
-            continue
-        if extensions and not matches_ext(f.name, extensions):
-            continue
-        yield f
+        if scan_dirs:
+            if f.is_dir():
+                yield f
+        else:
+            if not f.is_file():
+                continue
+            if extensions and not matches_ext(f.name, extensions):
+                continue
+            yield f
+
+
+def entry_size(p: Path) -> int:
+    """File size, or the recursive size of a game folder."""
+    if p.is_dir():
+        return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+    return p.stat().st_size
 
 
 def safe_filename(filename: str) -> str:
@@ -114,12 +128,13 @@ def list_emulators():
             continue
         roms_path = roms_path_of(s)
         extensions = s.get("extensions", [])
+        scan_dirs = s.get("scanDirs", False)
         rom_count = 0
         total_size = 0
         if roms_path and roms_path.exists():
-            for f in iter_rom_files(roms_path, extensions):
+            for f in iter_rom_files(roms_path, extensions, scan_dirs):
                 rom_count += 1
-                total_size += f.stat().st_size
+                total_size += entry_size(f)
         result.append({
             "id":         s["id"],
             "platform":   s.get("label", s["id"]),
@@ -140,13 +155,13 @@ def list_roms(system_id: str):
     if not roms_path or not roms_path.exists():
         return []
     files = []
-    for f in iter_rom_files(roms_path, system.get("extensions", [])):
-        stat = f.stat()
+    for f in iter_rom_files(roms_path, system.get("extensions", []), system.get("scanDirs", False)):
+        size = entry_size(f)
         files.append({
             "name":      f.name,
-            "size":      stat.st_size,
-            "sizeHuman": fmt_size(stat.st_size),
-            "ext":       f.suffix.lstrip(".").upper(),
+            "size":      size,
+            "sizeHuman": fmt_size(size),
+            "ext":       "DISC" if f.is_dir() else f.suffix.lstrip(".").upper(),
         })
     return files
 
@@ -154,6 +169,10 @@ def list_roms(system_id: str):
 @app.post("/api/roms/{system_id}/upload")
 async def upload_rom(system_id: str, file: UploadFile = File(...)):
     system = get_system(system_id)
+    if system.get("scanDirs"):
+        raise HTTPException(400, "This system stores games as folders (disc games). "
+                                 "Copy them via SSH/USB, or install a game .pkg from the "
+                                 "RPCS3 manager — single-file upload does not apply here.")
     roms_path = roms_path_of(system)
     if not roms_path:
         raise HTTPException(400, "No ROM path configured")
@@ -196,9 +215,12 @@ def delete_rom(system_id: str, filename: str):
     except ValueError:
         raise HTTPException(403)
 
-    if not target.is_file():
+    if target.is_dir() and system.get("scanDirs"):
+        shutil.rmtree(target)          # disc-game folder
+    elif target.is_file():
+        target.unlink()
+    else:
         raise HTTPException(404)
-    target.unlink()
     return {"ok": True}
 
 

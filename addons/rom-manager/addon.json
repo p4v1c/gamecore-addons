@@ -1,11 +1,13 @@
 {
   "name": "rom-manager",
   "label": "ROMs",
-  "description": "Upload ROMs from the browser — drag & drop per system",
-  "version": "1.0.0",
+  "description": "Upload ROMs from the browser \u2014 drag & drop per system",
+  "version": "1.0.1",
   "type": "web",
   "default": true,
   "service": "user",
   "port": 8770,
-  "offline_assets": ["wheels"]
+  "offline_assets": [
+    "wheels"
+  ]
 }

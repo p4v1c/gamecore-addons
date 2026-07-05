@@ -104,6 +104,9 @@ def list_games():
                 "title": " ".join(meta.get("TITLE", p.name.strip("/") or serial).split()),
                 "source": "disc",
                 "versions": _game_versions(cfg, serial, meta.get("APP_VER", "")),
+                # folder deleted but games.yml entry left behind — RPCS3 (and
+                # we) keep listing it until the entry is removed
+                "missing": not p.exists(),
             }
 
     hdd = cfg / "dev_hdd0" / "game"
@@ -118,6 +121,7 @@ def list_games():
                 "title": " ".join(meta.get("TITLE", d.name).split()),
                 "source": "hdd",
                 "versions": _game_versions(cfg, serial, meta.get("APP_VER", "")),
+                "missing": False,
             }
 
     for g in games.values():
@@ -144,6 +148,38 @@ def game_icon(serial: str):
         if c.is_file():
             return FileResponse(str(c), media_type="image/png")
     raise HTTPException(404)
+
+
+@app.delete("/api/games/{serial}")
+def remove_game(serial: str, data: bool = False):
+    """Remove a game from RPCS3's list: drop its games.yml line (surgical,
+    backup first). With data=true, also delete its dev_hdd0/game/<serial>*
+    dirs (installed updates / HDD game data — never the save files, which
+    live under dev_hdd0/home)."""
+    _check_serial(serial)
+    cfg = config_dir()
+    removed_entry = False
+    games_yml = cfg / "games.yml"
+    if games_yml.exists():
+        lines = games_yml.read_text().splitlines()
+        kept = [l for l in lines if not re.match(rf"^{serial}:\s", l)]
+        if len(kept) != len(lines):
+            backup(games_yml)
+            games_yml.write_text("\n".join(kept) + ("\n" if kept else ""))
+            removed_entry = True
+
+    removed_data = []
+    if data:
+        game_dir = cfg / "dev_hdd0" / "game"
+        if game_dir.is_dir():
+            for d in game_dir.iterdir():
+                if d.is_dir() and d.name.startswith(serial):
+                    shutil.rmtree(d)
+                    removed_data.append(d.name)
+
+    if not removed_entry and not removed_data:
+        raise HTTPException(404, "nothing to remove for this serial")
+    return {"ok": True, "removed_entry": removed_entry, "removed_data": removed_data}
 
 
 # ── Per-game config ───────────────────────────────────────────────────────────

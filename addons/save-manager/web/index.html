@@ -204,16 +204,18 @@ function gameHTML(g) {
 }
 
 function render() {
-  const saveCol = data.collections.find(c => c.kind === 'save');
-  const stateCol = data.collections.find(c => c.kind === 'state');
+  // one drop zone per distinct (kind, mode) — e.g. Dolphin has folder saves
+  // (Wii) AND memory-card files (GC)
+  const seen = new Set();
+  const zones = data.collections.filter(c => {
+    const k = c.kind + '/' + c.mode;
+    return seen.has(k) ? false : (seen.add(k), true);
+  });
   let html = '';
 
   // Restore
   html += `<div class="section-title">Restore</div>`;
-  html += `<div class="restore">`;
-  if (saveCol) html += dz(saveCol, 'save');
-  if (stateCol) html += dz(stateCol, 'state');
-  html += `</div>`;
+  html += `<div class="restore">${zones.map(c => dz(c, c.kind)).join('')}</div>`;
 
   // Games
   html += `<div class="section-title">Games — ${data.games.length}</div>`;

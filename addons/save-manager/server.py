@@ -12,17 +12,20 @@ import logging
 import os
 import re
 import shutil
+import struct
 import zipfile
+import zlib
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from urllib.parse import quote
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from catalog import CATALOG, resolve_base, game_of, cover_for
+from catalog import CATALOG, resolve_base, scan
 
 ADDON_DIR = Path(__file__).parent
 PORT = int(os.environ.get("ADDON_PORT", 8772))
@@ -50,61 +53,59 @@ def _emu(emu_id: str) -> dict:
     return CATALOG[emu_id]
 
 
-def _entries(emu_id: str) -> list[dict]:
-    base = resolve_base(emu_id)
-    if not base:
-        return []
+def _entries(emu_id: str, internal: bool = False) -> list[dict]:
+    _emu(emu_id)
+    _base, raw = scan(emu_id)
     out = []
-    for ci, col in enumerate(_emu(emu_id)["collections"]):
-        cdir = base / col["subpath"] if col["subpath"] else base
-        if not cdir.is_dir():
-            continue
-        for f in sorted(cdir.iterdir(), key=lambda x: x.name.lower()):
-            if f.name.startswith("."):
-                continue
-            is_dir = f.is_dir()
-            if col["mode"] == "dirs" and not is_dir:
-                continue
-            if col["mode"] in ("files", "cards"):
-                if is_dir:
-                    continue
-                if col["exts"] and f.suffix.lower() not in col["exts"]:
-                    continue
-            key, title = game_of(emu_id, f.name, col["group"], base)
-            size = dir_size(f) if is_dir else f.stat().st_size
-            out.append({
-                "id": f"{ci}/{f.name}",
-                "name": f.name,
-                "kind": col["kind"],
-                "shared_card": col["mode"] == "cards",
-                "is_dir": is_dir,
-                "size": size,
-                "sizeHuman": fmt_size(size),
-                "game_key": key,
-                "game_title": title,
-            })
+    for e in raw:
+        try:
+            size = dir_size(e["path"]) if e["is_dir"] else e["path"].stat().st_size
+        except OSError:
+            size = 0
+        d = {
+            "id": f"{e['ci']}/{e['rel']}",
+            "name": e["rel"],
+            "kind": e["kind"],
+            "shared_card": e["mode"] == "cards",
+            "is_dir": e["is_dir"],
+            "size": size,
+            "sizeHuman": fmt_size(size),
+            "game_key": e["key"],
+            "game_title": e["title"],
+        }
+        if internal:
+            d["_icon"] = e["icon"]
+        out.append(d)
     return out
 
 
-def _resolve_entry(emu_id: str, entry_id: str) -> tuple[Path, dict]:
+def _collection_dir(emu_id: str, ci: int) -> tuple[Path, dict]:
     base = resolve_base(emu_id)
     if not base:
         raise HTTPException(404, "no data directory for this emulator on the box")
-    m = re.fullmatch(r"(\d+)/(.+)", entry_id)
-    if not m:
-        raise HTTPException(400, "bad entry id")
-    ci, name = int(m.group(1)), m.group(2)
     cols = _emu(emu_id)["collections"]
     if ci >= len(cols):
         raise HTTPException(400, "bad collection")
     col = cols[ci]
-    cdir = (base / col["subpath"]) if col["subpath"] else base
-    target = cdir / Path(name).name
+    return (base / col["subpath"]) if col["subpath"] else base, col
+
+
+def _resolve_entry(emu_id: str, entry_id: str) -> tuple[Path, Path, dict]:
+    """entry id = '<collection>/<relative path>' (games can nest several
+    levels deep — Wii title trees, Switch user dirs…)."""
+    m = re.fullmatch(r"(\d+)/(.+)", entry_id)
+    if not m:
+        raise HTTPException(400, "bad entry id")
+    cdir, col = _collection_dir(emu_id, int(m.group(1)))
+    rel = PurePosixPath(m.group(2))
+    if rel.is_absolute() or ".." in rel.parts:
+        raise HTTPException(403, "path outside the save directory")
+    target = cdir.joinpath(*rel.parts)
     try:
         target.resolve().relative_to(cdir.resolve())
     except ValueError:
         raise HTTPException(403, "path outside the save directory")
-    return target, col
+    return target, cdir, col
 
 
 def _backup(path: Path) -> None:
@@ -140,42 +141,36 @@ def list_emulators():
     return result
 
 
-def _icon_url(emu_id: str, key: str, title: str) -> str | None:
-    """Icon available? RPCS3 ICON0, else a GameCore cover matched by title."""
-    base = resolve_base(emu_id)
-    if emu_id == "rpcs3" and base and re.fullmatch(r"[A-Za-z]{4}\d{5}", key):
-        if (base / "dev_hdd0/game" / key / "ICON0.PNG").is_file():
-            return f"/api/games/{emu_id}/icon?key={key}"
-    if cover_for(key, title):
-        return f"/api/games/{emu_id}/icon?key={key}"
-    return None
-
-
 @app.get("/api/games/{emu_id}")
 def list_games(emu_id: str):
     """Saves grouped by game (icon + name + its files), plus an 'other' bucket
-    for saves not tied to a game (shared cards, Switch, system)."""
+    for saves not tied to a game (shared cards, system, cache)."""
     _emu(emu_id)
     base = resolve_base(emu_id)
-    entries = _entries(emu_id)
+    entries = _entries(emu_id, internal=True)
     games: dict[str, dict] = {}
     other: list[dict] = []
     for e in entries:
+        icon = e.pop("_icon")
         if not e["game_key"]:
             other.append(e)
             continue
         g = games.setdefault(e["game_key"], {
             "key": e["game_key"],
             "title": e["game_title"] or e["game_key"],
-            "entries": [], "saves": 0, "states": 0, "size": 0,
+            "entries": [], "saves": 0, "states": 0, "size": 0, "_icon": None,
         })
         g["entries"].append(e)
         g["size"] += e["size"]
         g["saves" if e["kind"] == "save" else "states"] += 1
+        if icon and not g["_icon"]:
+            g["_icon"] = icon
     games_list = sorted(games.values(), key=lambda g: g["title"].lower())
     for g in games_list:
         g["sizeHuman"] = fmt_size(g["size"])
-        g["icon"] = _icon_url(emu_id, g["key"], g["title"])
+        has_icon = g.pop("_icon") is not None
+        g["icon"] = (f"/api/games/{emu_id}/icon?key={quote(g['key'])}"
+                     if has_icon else None)
     return {
         "available": base is not None,
         "base": str(base) if base else None,
@@ -191,37 +186,83 @@ _MODE_HINT = {
     "files": "single file (.sav, state…)",
     "dirs": "folder save — upload it as a .zip",
     "cards": "shared memory-card file",
+    "any": "save-state file or folder (.zip)",
 }
+
+
+def _tga_to_png(data: bytes) -> bytes | None:
+    """Wii U iconTex.tga → PNG (type-2 uncompressed 24/32-bit only)."""
+    if len(data) < 18 or data[2] != 2:
+        return None
+    w, h = int.from_bytes(data[12:14], "little"), int.from_bytes(data[14:16], "little")
+    bpp, desc = data[16], data[17]
+    n = bpp // 8
+    if n not in (3, 4) or len(data) < 18 + data[0] + w * h * n:
+        return None
+    off = 18 + data[0]
+    rows = []
+    for y in range(h):
+        src = data[off + y * w * n:off + (y + 1) * w * n]
+        px = bytearray(w * 4)
+        for x in range(w):
+            b, g, r = src[x * n], src[x * n + 1], src[x * n + 2]
+            a = src[x * n + 3] if n == 4 else 255
+            px[x * 4:x * 4 + 4] = (r, g, b, a)
+        rows.append(bytes(px))
+    if not desc & 0x20:          # bottom-up origin
+        rows.reverse()
+    raw = b"".join(b"\x00" + r for r in rows)
+
+    def chunk(tag, body):
+        c = tag + body
+        return len(body).to_bytes(4, "big") + c + zlib.crc32(c).to_bytes(4, "big")
+
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw))
+            + chunk(b"IEND", b""))
+
+
+_tga_cache: dict = {}
 
 
 @app.get("/api/games/{emu_id}/icon")
 def game_icon(emu_id: str, key: str):
-    base = resolve_base(emu_id)
-    if base and emu_id == "rpcs3" and re.fullmatch(r"[A-Za-z]{4}\d{5}", key):
-        icon = base / "dev_hdd0/game" / key / "ICON0.PNG"
-        if icon.is_file():
-            return FileResponse(str(icon), media_type="image/png")
-    # else: cover matched by the game's title — recompute the title for this key
-    for e in _entries(emu_id):
-        if e["game_key"] == key:
-            cov = cover_for(e["game_key"], e["game_title"])
-            if cov:
-                return FileResponse(str(cov), media_type="image/png")
-            break
-    raise HTTPException(404)
+    """The icon the resolver found for this game: savedata ICON0.PNG (PS3/PSP),
+    Wii U iconTex.tga (converted), or a GameCore cover."""
+    _emu(emu_id)
+    _base, raw = scan(emu_id)
+    icon = next((e["icon"] for e in raw if e["key"] == key and e["icon"]), None)
+    if not icon or not icon.is_file():
+        raise HTTPException(404)
+    if icon.suffix.lower() == ".tga":
+        stamp = (str(icon), icon.stat().st_mtime_ns)
+        png = _tga_cache.get(stamp)
+        if png is None:
+            png = _tga_to_png(icon.read_bytes())
+            if png is None:
+                raise HTTPException(404)
+            if len(_tga_cache) > 64:
+                _tga_cache.clear()
+            _tga_cache[stamp] = png
+        return Response(png, media_type="image/png")
+    return FileResponse(str(icon), media_type="image/png")
 
 
 @app.get("/api/saves/{emu_id}/download")
 def download(emu_id: str, id: str):
-    target, _col = _resolve_entry(emu_id, id)
+    target, cdir, _col = _resolve_entry(emu_id, id)
     if not target.exists():
         raise HTTPException(404, "not found")
     if target.is_dir():
+        # zip paths are relative to the collection dir, so re-uploading the
+        # zip restores nested games (Wii <hi>/<lo>, Switch <user>/<tid>…)
+        # at their exact place
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             for f in target.rglob("*"):
                 if f.is_file():
-                    z.write(f, f.relative_to(target.parent))
+                    z.write(f, f.relative_to(cdir))
         buf.seek(0)
         return StreamingResponse(buf, media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="{target.name}.zip"'})
@@ -230,21 +271,14 @@ def download(emu_id: str, id: str):
 
 @app.post("/api/saves/{emu_id}/upload")
 async def upload(emu_id: str, collection: int, file: UploadFile = File(...)):
-    base = resolve_base(emu_id)
-    if not base:
-        raise HTTPException(503, "no data directory for this emulator on the box")
-    cols = _emu(emu_id)["collections"]
-    if collection >= len(cols):
-        raise HTTPException(400, "bad collection")
-    col = cols[collection]
-    cdir = (base / col["subpath"]) if col["subpath"] else base
+    cdir, col = _collection_dir(emu_id, collection)
     cdir.mkdir(parents=True, exist_ok=True)
     name = Path(file.filename or "").name
     if not name:
         raise HTTPException(400, "no filename")
     data = await file.read()
 
-    if name.lower().endswith(".zip") and col["mode"] == "dirs":
+    if name.lower().endswith(".zip") and col["mode"] in ("dirs", "any"):
         try:
             zf = zipfile.ZipFile(io.BytesIO(data))
         except zipfile.BadZipFile:
@@ -276,7 +310,7 @@ async def upload(emu_id: str, collection: int, file: UploadFile = File(...)):
 
 @app.delete("/api/saves/{emu_id}")
 def delete(emu_id: str, id: str):
-    target, _col = _resolve_entry(emu_id, id)
+    target, _cdir, _col = _resolve_entry(emu_id, id)
     if not target.exists():
         raise HTTPException(404, "not found")
     _backup(target)

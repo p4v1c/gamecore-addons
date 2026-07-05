@@ -1,0 +1,11 @@
+{
+  "name": "rpcs3-manager",
+  "label": "RPCS3",
+  "description": "Configure PS3 games remotely — per-game config & patches, RPCS3-style",
+  "version": "1.0.0",
+  "type": "web",
+  "default": false,
+  "service": "user",
+  "port": 8771,
+  "offline_assets": ["wheels"]
+}

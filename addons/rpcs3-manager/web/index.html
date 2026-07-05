@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GameCore — RPCS3 Manager</title>
+<link rel="stylesheet" href="gamecore-nav.css">
+<script src="gamecore-nav.js" defer></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0b0d12; --surface:#13161e; --surface2:#1c202c; --surface3:#252a38;
+  --border:rgba(255,255,255,0.07); --text:#dde1ed; --text2:#7d8499;
+  --accent:#a855f7; --danger:#f04040; --success:#40d480; --warn:#fbbf24;
+  --radius:10px; --sidebar-w:290px;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex;font-size:14px}
+body.gc-nav-present #sidebar, body.gc-nav-present #main{height:calc(100vh - 44px)}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:3px}
+
+#sidebar{width:var(--sidebar-w);min-width:var(--sidebar-w);height:100vh;background:var(--surface);
+  border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.sidebar-header{padding:22px 20px 14px;border-bottom:1px solid var(--border);flex-shrink:0}
+.sidebar-logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:#fff}
+.sidebar-logo svg{color:var(--accent)}
+.sidebar-sub{margin-top:4px;font-size:11px;color:var(--text2);letter-spacing:.5px;text-transform:uppercase}
+.game-list{flex:1;overflow-y:auto;padding:8px 0}
+.game-item{display:flex;align-items:center;gap:12px;padding:9px 16px;cursor:pointer;
+  border-left:3px solid transparent;transition:background .15s,border-color .15s;user-select:none}
+.game-item:hover{background:var(--surface2)}
+.game-item.active{background:var(--surface2);border-left-color:var(--accent)}
+.game-item.active .game-title{color:#fff}
+.game-icon{width:58px;height:32px;border-radius:5px;object-fit:cover;background:var(--surface3);flex-shrink:0}
+.game-info{flex:1;min-width:0}
+.game-title{font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.game-serial{font-size:11px;color:var(--text2);margin-top:1px;display:flex;gap:6px;align-items:center}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--success);flex-shrink:0}
+
+#main{flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+.top-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:16px 28px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.top-left{display:flex;align-items:baseline;gap:12px;min-width:0}
+.top-title{font-size:18px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top-meta{font-size:12px;color:var(--text2);white-space:nowrap}
+.tabs{display:flex;gap:4px;flex-shrink:0}
+.tab{padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text2);
+  border:1px solid transparent;transition:all .15s}
+.tab:hover{background:var(--surface2);color:var(--text)}
+.tab.active{background:rgba(168,85,247,.14);color:#d8b4fe;border-color:rgba(168,85,247,.35)}
+
+.content{flex:1;overflow-y:auto;padding:26px 28px}
+#welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--text2);text-align:center}
+#welcome h2{font-size:22px;color:var(--text);font-weight:700}
+#welcome p{font-size:14px;max-width:360px;line-height:1.7}
+
+.banner{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 16px;
+  border-radius:var(--radius);margin-bottom:20px;font-size:13px}
+.banner.global{background:rgba(255,255,255,.04);border:1px solid var(--border);color:var(--text2)}
+.banner.custom{background:rgba(64,212,128,.07);border:1px solid rgba(64,212,128,.25);color:#86efac}
+
+.group{margin-bottom:26px}
+.group-title{font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text2);
+  margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px 22px}
+.field{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 12px;
+  border-radius:8px;background:var(--surface);border:1px solid var(--border)}
+.field.dirty{border-color:rgba(168,85,247,.5)}
+.field.differs{background:rgba(168,85,247,.05)}
+.f-label{font-size:13px;min-width:0}
+.f-name{color:var(--text);font-weight:500}
+.f-hint{font-size:11px;color:var(--text2);margin-top:2px}
+.f-default{font-size:10px;color:var(--text2);opacity:.8;margin-top:2px}
+select,input[type=number]{background:var(--surface3);color:var(--text);border:1px solid var(--border);
+  border-radius:7px;padding:6px 9px;font-size:13px;font-family:var(--font);max-width:220px}
+select:focus,input:focus{outline:1px solid var(--accent)}
+input[type=number]{width:90px}
+.switch{position:relative;width:40px;height:22px;flex-shrink:0;cursor:pointer}
+.switch input{display:none}
+.slider{position:absolute;inset:0;background:var(--surface3);border-radius:22px;transition:.2s}
+.slider::before{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:#8a91a5;
+  top:3px;left:3px;transition:.2s}
+.switch input:checked + .slider{background:var(--accent)}
+.switch input:checked + .slider::before{transform:translateX(18px);background:#fff}
+.switch input:disabled + .slider{opacity:.35;cursor:not-allowed}
+
+.save-bar{position:sticky;bottom:0;display:flex;gap:10px;justify-content:flex-end;align-items:center;
+  padding:14px 0 2px;background:linear-gradient(transparent,var(--bg) 30%)}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:var(--radius);
+  border:none;cursor:pointer;font-size:13px;font-weight:600;transition:opacity .15s,transform .1s}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover:not(:disabled){opacity:.88}
+.btn-outline{background:transparent;color:var(--text);border:1px solid var(--border)}
+.btn-outline:hover{background:var(--surface2)}
+.btn-danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}
+.btn-danger:hover{background:var(--danger);color:#fff}
+
+.patch{display:flex;align-items:flex-start;gap:14px;padding:13px 16px;border-radius:var(--radius);
+  background:var(--surface);border:1px solid var(--border);margin-bottom:10px}
+.patch.off-version{opacity:.45}
+.p-body{flex:1;min-width:0}
+.p-name{font-size:14px;font-weight:600;color:#fff}
+.p-meta{font-size:11px;color:var(--text2);margin-top:3px;display:flex;flex-wrap:wrap;gap:10px}
+.p-notes{font-size:12px;color:var(--text2);margin-top:6px;line-height:1.5}
+.p-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;background:var(--surface3);color:var(--text2)}
+.p-badge.on{background:rgba(64,212,128,.15);color:var(--success)}
+
+.drop-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:22px;text-align:center;
+  color:var(--text2);cursor:pointer;transition:.2s;display:flex;flex-direction:column;align-items:center;
+  gap:8px;margin-bottom:22px}
+.drop-zone:hover,.drop-zone.hover{border-color:var(--accent);background:rgba(168,85,247,.05);color:var(--text)}
+.drop-zone input{display:none}
+
+#toasts{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:10px;z-index:200;width:340px}
+.toast{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--success);
+  border-radius:var(--radius);padding:12px 14px;font-size:13px;box-shadow:0 8px 32px rgba(0,0,0,.5);animation:slideIn .2s ease}
+.toast.error{border-left-color:var(--danger)}
+@keyframes slideIn{from{transform:translateX(120%);opacity:0}to{transform:none;opacity:1}}
+.spinner{width:32px;height:32px;border:3px solid var(--surface3);border-top-color:var(--accent);
+  border-radius:50%;animation:spin .6s linear infinite;margin:60px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{padding:50px 0;text-align:center;color:var(--text2);font-size:13px}
+</style>
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 17l8 4 8-4M4 12l8 4 8-4M4 7l8-4 8 4-8 4-8-4z"/>
+      </svg>
+      RPCS3 Manager
+    </div>
+    <div class="sidebar-sub" id="sidebar-sub">Loading…</div>
+  </div>
+  <div class="game-list" id="game-list"><div class="spinner"></div></div>
+</aside>
+
+<main id="main">
+  <div class="top-bar" id="top-bar" style="display:none">
+    <div class="top-left">
+      <span class="top-title" id="top-title"></span>
+      <span class="top-meta" id="top-meta"></span>
+    </div>
+    <div class="tabs">
+      <div class="tab active" id="tab-config" onclick="showTab('config')">Configuration</div>
+      <div class="tab" id="tab-patches" onclick="showTab('patches')">Patches</div>
+    </div>
+  </div>
+  <div class="content" id="content">
+    <div id="welcome">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".3">
+        <path d="M4 17l8 4 8-4M4 12l8 4 8-4M4 7l8-4 8 4-8 4-8-4z"/>
+      </svg>
+      <h2>RPCS3 Manager</h2>
+      <p>Select a PS3 game on the left to edit its custom configuration and manage its patches — no need to leave the couch.</p>
+    </div>
+  </div>
+</main>
+
+<div id="toasts"></div>
+
+<script>
+let games = [], schema = null, globals = {};
+let active = null, tab = 'config';
+let cfgState = { exists: false, values: {}, dirty: {} };
+
+const $ = id => document.getElementById(id);
+
+function toast(msg, error = false) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (error ? ' error' : '');
+  el.textContent = msg;
+  $('toasts').appendChild(el);
+  setTimeout(() => el.remove(), error ? 6000 : 3000);
+}
+
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+async function jget(url){const r=await fetch(url);if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||r.status);return r.json()}
+async function jsend(url,method,body){
+  const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:body!==undefined?JSON.stringify(body):undefined});
+  if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||r.status);return r.json()
+}
+
+// ── Games sidebar ────────────────────────────────────────────────────────────
+async function loadGames() {
+  try {
+    [games, {schema, globals} = {}] = await Promise.all([jget('/api/games'), jget('/api/schema')]);
+  } catch (e) { $('game-list').innerHTML = `<div class="empty">⚠ ${escHtml(e.message)}</div>`; return; }
+  $('sidebar-sub').textContent = `${games.length} PS3 game${games.length !== 1 ? 's' : ''}`;
+  $('game-list').innerHTML = games.map(g => `
+    <div class="game-item" id="game-${g.serial}" onclick="selectGame('${g.serial}')">
+      <img class="game-icon" src="/api/games/${g.serial}/icon" loading="lazy" onerror="this.style.visibility='hidden'">
+      <div class="game-info">
+        <div class="game-title" title="${escHtml(g.title)}">${escHtml(g.title)}</div>
+        <div class="game-serial">${g.serial}${g.has_custom_config ? '<span class="dot" title="Custom config"></span>' : ''}</div>
+      </div>
+    </div>`).join('') || '<div class="empty">No PS3 game found</div>';
+}
+
+async function selectGame(serial) {
+  active = games.find(g => g.serial === serial);
+  document.querySelectorAll('.game-item').forEach(el => el.classList.remove('active'));
+  $(`game-${serial}`).classList.add('active');
+  $('top-bar').style.display = '';
+  $('top-title').textContent = active.title;
+  $('top-meta').textContent = `${active.serial} · v${active.versions.join(', v') || '?'}`;
+  showTab(tab);
+}
+
+function showTab(t) {
+  tab = t;
+  $('tab-config').classList.toggle('active', t === 'config');
+  $('tab-patches').classList.toggle('active', t === 'patches');
+  if (!active) return;
+  if (t === 'config') loadConfig(); else loadPatches();
+}
+
+// ── Configuration tab ────────────────────────────────────────────────────────
+async function loadConfig() {
+  $('content').innerHTML = '<div class="spinner"></div>';
+  let data;
+  try { data = await jget(`/api/games/${active.serial}/config`); }
+  catch (e) { $('content').innerHTML = `<div class="empty">⚠ ${escHtml(e.message)}</div>`; return; }
+  cfgState = { exists: data.exists, values: data.values, dirty: {} };
+  renderConfig();
+}
+
+function renderConfig() {
+  const banner = cfgState.exists
+    ? `<div class="banner custom"><span>● Custom configuration — this game overrides the global settings.</span>
+         <button class="btn btn-danger" onclick="resetConfig()">Reset to global</button></div>`
+    : `<div class="banner global"><span>○ No custom configuration — showing global values. Saving a change creates
+         <b>config_${active.serial}.yml</b> from the global settings (like RPCS3 does).</span></div>`;
+
+  const groups = schema.map(grp => `
+    <div class="group">
+      <div class="group-title">${grp.label}</div>
+      <div class="fields">${grp.fields.map(fieldHTML).join('')}</div>
+    </div>`).join('');
+
+  $('content').innerHTML = banner + groups + `
+    <div class="save-bar">
+      <span id="dirty-count" style="font-size:12px;color:var(--text2)"></span>
+      <button class="btn btn-outline" onclick="loadConfig()">Discard</button>
+      <button class="btn btn-primary" id="btn-save" onclick="saveConfig()" disabled>💾 Save</button>
+    </div>`;
+}
+
+function fieldHTML(f) {
+  const cur = current(f.id), glob = globals[f.id];
+  const defTxt = glob !== undefined ? `global: ${glob}` : '';
+  let ctrl;
+  if (f.type === 'enum') {
+    ctrl = `<select onchange="setVal('${f.id}',this.value)">${f.options.map(o =>
+      `<option ${o === cur ? 'selected' : ''}>${escHtml(o)}</option>`).join('')}</select>`;
+  } else if (f.type === 'bool') {
+    ctrl = `<label class="switch"><input type="checkbox" ${cur === 'true' ? 'checked' : ''}
+      onchange="setVal('${f.id}',this.checked?'true':'false')"><span class="slider"></span></label>`;
+  } else {
+    ctrl = `<input type="number" min="${f.min}" max="${f.max}" value="${escHtml(cur ?? '')}"
+      onchange="setVal('${f.id}',this.value)">`;
+  }
+  const differs = cfgState.exists && glob !== undefined && cur !== undefined && cur !== glob;
+  return `<div class="field ${differs ? 'differs' : ''}" id="field-${cssId(f.id)}">
+    <div class="f-label"><div class="f-name">${escHtml(f.key)}</div>
+      ${f.hint ? `<div class="f-hint">${escHtml(f.hint)}</div>` : ''}
+      <div class="f-default">${escHtml(defTxt)}</div></div>
+    ${ctrl}</div>`;
+}
+
+function cssId(s){return s.replace(/[^a-zA-Z0-9]/g,'_')}
+function current(id){return id in cfgState.dirty ? cfgState.dirty[id] : cfgState.values[id]}
+
+function setVal(id, value) {
+  if (value === cfgState.values[id]) delete cfgState.dirty[id];
+  else cfgState.dirty[id] = value;
+  const n = Object.keys(cfgState.dirty).length;
+  $('btn-save').disabled = n === 0;
+  $('dirty-count').textContent = n ? `${n} change${n > 1 ? 's' : ''} pending` : '';
+  $(`field-${cssId(id)}`).classList.toggle('dirty', id in cfgState.dirty);
+}
+
+async function saveConfig() {
+  const n = Object.keys(cfgState.dirty).length;
+  try {
+    const r = await jsend(`/api/games/${active.serial}/config`, 'PUT', { values: cfgState.dirty });
+    toast(r.created ? `Custom config created (${n} change${n > 1 ? 's' : ''})` : `Saved — ${n} change${n > 1 ? 's' : ''} (backup kept)`);
+    active.has_custom_config = true;
+    await loadGames(); $(`game-${active.serial}`)?.classList.add('active');
+    loadConfig();
+  } catch (e) { toast(`Save failed: ${e.message}`, true); }
+}
+
+async function resetConfig() {
+  if (!confirm(`Delete the custom configuration of ${active.title}?\nA backup will be kept next to it.`)) return;
+  try {
+    await jsend(`/api/games/${active.serial}/config`, 'DELETE');
+    toast('Custom config removed — game uses global settings again');
+    active.has_custom_config = false;
+    await loadGames(); $(`game-${active.serial}`)?.classList.add('active');
+    loadConfig();
+  } catch (e) { toast(`Reset failed: ${e.message}`, true); }
+}
+
+// ── Patches tab ──────────────────────────────────────────────────────────────
+async function loadPatches() {
+  $('content').innerHTML = '<div class="spinner"></div>';
+  let patches;
+  try { patches = await jget(`/api/games/${active.serial}/patches`); }
+  catch (e) { $('content').innerHTML = `<div class="empty">⚠ ${escHtml(e.message)}</div>`; return; }
+
+  const dz = `
+    <label class="drop-zone" id="patch-dz" ondragover="event.preventDefault();this.classList.add('hover')"
+           ondragleave="this.classList.remove('hover')" ondrop="dropPatch(event)">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <span style="font-size:13px;font-weight:600">Import a patch file (patch.yml)</span>
+      <span style="font-size:12px">Validated then merged into imported_patch.yml — get patches from the RPCS3 wiki</span>
+      <input type="file" accept=".yml,.yaml" onchange="uploadPatch(this.files[0]);this.value=''">
+    </label>`;
+
+  if (!patches.length) {
+    $('content').innerHTML = dz + `<div class="empty">No patch found for ${active.serial}.</div>`;
+    return;
+  }
+  $('content').innerHTML = dz + patches.map((p, i) => `
+    <div class="patch ${p.version_match ? '' : 'off-version'}">
+      <div class="p-body">
+        <div class="p-name">${escHtml(p.name)} ${p.enabled ? '<span class="p-badge on">ENABLED</span>' : ''}</div>
+        <div class="p-meta">
+          ${p.author ? `<span>by ${escHtml(p.author)}</span>` : ''}
+          <span>game v${escHtml(p.version)}</span>
+          ${p.patch_version ? `<span>patch v${escHtml(p.patch_version)}</span>` : ''}
+          <span>${escHtml(p.file)}</span>
+          ${p.version_match ? '' : '<span style="color:var(--warn)">⚠ other game version</span>'}
+        </div>
+        ${p.notes ? `<div class="p-notes">${escHtml(p.notes)}</div>` : ''}
+      </div>
+      <label class="switch" title="${p.version_match ? 'Enable / disable' : 'Version mismatch — toggle anyway if you know what you do'}">
+        <input type="checkbox" ${p.enabled ? 'checked' : ''} onchange="togglePatch(${i},this)">
+        <span class="slider"></span>
+      </label>
+    </div>`).join('');
+  window._patches = patches;
+}
+
+async function togglePatch(i, input) {
+  const p = window._patches[i];
+  input.disabled = true;
+  try {
+    await jsend(`/api/games/${active.serial}/patches/toggle`, 'POST', {
+      hash: p.hash, name: p.name, title: p.title,
+      serial_key: p.serial_key, version: p.version, enabled: input.checked,
+    });
+    toast(`${p.name} ${input.checked ? 'enabled' : 'disabled'} — restart the game to apply`);
+    loadPatches();
+  } catch (e) { input.checked = !input.checked; input.disabled = false; toast(`Failed: ${e.message}`, true); }
+}
+
+function dropPatch(e) {
+  e.preventDefault();
+  $('patch-dz').classList.remove('hover');
+  const f = e.dataTransfer.files[0];
+  if (f) uploadPatch(f);
+}
+
+async function uploadPatch(file) {
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const r = await fetch('/api/patches/upload', { method: 'POST', body: form });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || r.status);
+    toast(`${file.name}: ${data.merged} patch(es) merged into ${data.file}`);
+    loadPatches();
+  } catch (e) { toast(`Import failed: ${e.message}`, true); }
+}
+
+loadGames();
+</script>
+</body>
+</html>

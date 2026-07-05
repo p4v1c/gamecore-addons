@@ -1,0 +1,11 @@
+{
+  "name": "save-manager",
+  "label": "Saves",
+  "description": "Back up, restore & delete emulator saves and save states — all systems",
+  "version": "1.0.0",
+  "type": "web",
+  "default": false,
+  "service": "user",
+  "port": 8772,
+  "offline_assets": ["wheels"]
+}

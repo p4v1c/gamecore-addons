@@ -358,10 +358,14 @@ def game_patches(serial: str):
     cfg = config_dir()
     game = next((g for g in list_games() if g["serial"] == serial), None)
     game_versions = set(game["versions"]) if game else set()
+    current_version = max(game_versions) if game_versions else ""
 
     pconf = yload(cfg / "patch_config.yml") or {}
     enabled_key = _enabled_key(pconf)
-    result = []
+    # The imported file usually duplicates the official DB entries, and the
+    # activation state is keyed by hash+name+title+serial+version — NOT by
+    # file. So identical entries across files are one logical patch.
+    entries: dict[tuple, dict] = {}
     for pfile in _patch_files(serial):
         tree = yload(pfile)
         if not isinstance(tree, dict):
@@ -384,23 +388,33 @@ def game_patches(serial: str):
                             notes = " ".join(str(n) for n in notes)
                         for ver in (versions or []):
                             ver = str(ver)
+                            key = (hash_, name, title, skey, ver)
+                            if key in entries:
+                                if pfile.name not in entries[key]["files"]:
+                                    entries[key]["files"].append(pfile.name)
+                                continue
                             enabled = str(_get_path(pconf,
                                 [hash_, name, title, skey, ver, enabled_key]) or "").lower() == "true"
-                            result.append({
-                                "file": pfile.name,
+                            entries[key] = {
+                                "files": [pfile.name],
                                 "hash": hash_,
                                 "name": name,
                                 "title": title,
                                 "serial_key": skey,
                                 "version": ver,
                                 "version_match": ver == "All" or ver in game_versions,
+                                # All/All entries are matched by RPCS3 against
+                                # module hashes — we can't filter them per game
+                                "generic": skey == "All",
                                 "author": str(entry.get("Author") or ""),
                                 "notes": str(notes or ""),
                                 "patch_version": str(entry.get("Patch Version") or ""),
                                 "enabled": enabled,
-                            })
-    result.sort(key=lambda p: (not p["version_match"], p["name"].lower()))
-    return result
+                            }
+    result = sorted(entries.values(),
+                    key=lambda p: (p["generic"], not p["version_match"],
+                                   p["name"].lower(), p["version"]))
+    return {"current_version": current_version, "patches": result}
 
 
 class ToggleBody(BaseModel):

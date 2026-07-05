@@ -100,15 +100,21 @@ input[type=number]{width:90px}
 .btn-danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}
 .btn-danger:hover{background:var(--danger);color:#fff}
 
-.patch{display:flex;align-items:flex-start;gap:14px;padding:13px 16px;border-radius:var(--radius);
+.patch{padding:13px 16px;border-radius:var(--radius);
   background:var(--surface);border:1px solid var(--border);margin-bottom:10px}
-.patch.off-version{opacity:.45}
-.p-body{flex:1;min-width:0}
-.p-name{font-size:14px;font-weight:600;color:#fff}
+.p-name{font-size:14px;font-weight:600;color:#fff;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .p-meta{font-size:11px;color:var(--text2);margin-top:3px;display:flex;flex-wrap:wrap;gap:10px}
 .p-notes{font-size:12px;color:var(--text2);margin-top:6px;line-height:1.5}
 .p-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;background:var(--surface3);color:var(--text2)}
 .p-badge.on{background:rgba(64,212,128,.15);color:var(--success)}
+.p-versions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.p-vrow{display:flex;align-items:center;gap:10px;background:var(--surface2);border:1px solid var(--border);
+  border-radius:8px;padding:7px 12px;font-size:12px}
+.p-vrow.off-version{opacity:.5}
+.p-vrow .vtag{font-size:9px;font-weight:700;letter-spacing:.5px;color:var(--accent)}
+details.generic{margin-top:26px}
+details.generic summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--text2);padding:10px 0;user-select:none}
+details.generic summary:hover{color:var(--text)}
 
 .drop-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:22px;text-align:center;
   color:var(--text2);cursor:pointer;transition:.2s;display:flex;flex-direction:column;align-items:center;
@@ -338,9 +344,11 @@ async function resetConfig() {
 // ── Patches tab ──────────────────────────────────────────────────────────────
 async function loadPatches() {
   $('content').innerHTML = '<div class="spinner"></div>';
-  let patches;
-  try { patches = await jget(`/api/games/${active.serial}/patches`); }
+  let data;
+  try { data = await jget(`/api/games/${active.serial}/patches`); }
   catch (e) { $('content').innerHTML = `<div class="empty">⚠ ${escHtml(e.message)}</div>`; return; }
+  const patches = data.patches, cur = data.current_version;
+  window._patches = patches;
 
   const dz = `
     <label class="drop-zone" id="patch-dz" ondragover="event.preventDefault();this.classList.add('hover')"
@@ -353,29 +361,71 @@ async function loadPatches() {
       <input type="file" accept=".yml,.yaml" onchange="uploadPatch(this.files[0]);this.value=''">
     </label>`;
 
-  if (!patches.length) {
-    $('content').innerHTML = dz + `<div class="empty">No patch found for ${active.serial}.</div>`;
-    return;
+  // one card per patch name; inside, one toggle per game version.
+  // Works with GLOBAL indices into `patches` so the toggles stay correct.
+  function cards(idxList) {
+    const groups = new Map();
+    idxList.forEach(i => {
+      const name = patches[i].name;
+      if (!groups.has(name)) groups.set(name, []);
+      groups.get(name).push(i);
+    });
+    return [...groups.entries()].map(([name, idxs]) => {
+      const first = patches[idxs[0]];
+      const nOn = idxs.filter(i => patches[i].enabled).length;
+      const meta = [
+        first.author && `by ${escHtml(first.author)}`,
+        first.patch_version && `patch v${escHtml(first.patch_version)}`,
+        escHtml(first.files.join(' + ')),
+      ].filter(Boolean).join('<span style="opacity:.4"> · </span>');
+      const rows = idxs.map(i => {
+        const p = patches[i];
+        const isCur = p.version === cur;
+        return `
+          <div class="p-vrow ${p.version_match ? '' : 'off-version'}"
+               title="${p.version_match ? 'Enable / disable for this game version' : 'This game version is not installed'}">
+            <span>${p.version === 'All' ? 'all versions' : 'game v' + escHtml(p.version)}</span>
+            ${p.patch_version !== first.patch_version ? `<span style="opacity:.7">patch v${escHtml(p.patch_version)}</span>` : ''}
+            ${isCur && p.version !== 'All' ? '<span class="vtag">CURRENT</span>' : ''}
+            <label class="switch"><input type="checkbox" ${p.enabled ? 'checked' : ''}
+              onchange="togglePatch(${i},this)"><span class="slider"></span></label>
+          </div>`;
+      }).join('');
+      return `
+        <div class="patch">
+          <div class="p-name">${escHtml(name)} ${nOn ? `<span class="p-badge on">ENABLED${idxs.length > 1 ? ' ×' + nOn : ''}</span>` : ''}</div>
+          <div class="p-meta">${meta}</div>
+          ${first.notes ? `<div class="p-notes">${escHtml(first.notes)}</div>` : ''}
+          <div class="p-versions">${rows}</div>
+        </div>`;
+    }).join('');
   }
-  $('content').innerHTML = dz + patches.map((p, i) => `
-    <div class="patch ${p.version_match ? '' : 'off-version'}">
-      <div class="p-body">
-        <div class="p-name">${escHtml(p.name)} ${p.enabled ? '<span class="p-badge on">ENABLED</span>' : ''}</div>
-        <div class="p-meta">
-          ${p.author ? `<span>by ${escHtml(p.author)}</span>` : ''}
-          <span>game v${escHtml(p.version)}</span>
-          ${p.patch_version ? `<span>patch v${escHtml(p.patch_version)}</span>` : ''}
-          <span>${escHtml(p.file)}</span>
-          ${p.version_match ? '' : '<span style="color:var(--warn)">⚠ other game version</span>'}
-        </div>
-        ${p.notes ? `<div class="p-notes">${escHtml(p.notes)}</div>` : ''}
-      </div>
-      <label class="switch" title="${p.version_match ? 'Enable / disable' : 'Version mismatch — toggle anyway if you know what you do'}">
-        <input type="checkbox" ${p.enabled ? 'checked' : ''} onchange="togglePatch(${i},this)">
-        <span class="slider"></span>
-      </label>
-    </div>`).join('');
-  window._patches = patches;
+
+  const allIdx = patches.map((_, i) => i);
+  const specificIdx = allIdx.filter(i => !patches[i].generic);
+  const genericIdx = allIdx.filter(i => patches[i].generic);
+  const genericOn = genericIdx.filter(i => patches[i].enabled).length;
+
+  let html = dz;
+  if (!patches.length) {
+    html += `<div class="empty">No patch found for ${active.serial}.</div>`;
+  } else {
+    html += specificIdx.length ? cards(specificIdx)
+      : `<div class="empty">No patch specific to ${active.serial}.</div>`;
+    if (genericIdx.length) {
+      html += `
+        <details class="generic" ${genericOn ? 'open' : ''}>
+          <summary>Generic patches — matched by module hash, listed for every game
+            (${genericIdx.length}${genericOn ? `, ${genericOn} enabled` : ''}) ▾</summary>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:12px">
+            These target specific modules (e.g. SPU MLAA) across many titles. RPCS3 only applies
+            them if the hash matches — enabling one that names another game has no effect here.
+          </div>
+          ${cards(genericIdx)}
+        </details>`;
+    }
+  }
+  $('content').innerHTML = html;
 }
 
 async function togglePatch(i, input) {

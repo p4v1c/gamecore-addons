@@ -39,6 +39,7 @@ The manager runs them with these variables in the environment:
 |-----|---------|
 | `USER_NAME`     | user the addon runs as |
 | `GAMECORE_PATH` | core install dir (default `/opt/GameCore`) |
+| `GAMECORE_BACKEND_PORT` | core API port (default `8765`) — bake it into your unit if you call the core |
 | `ADDON_DIR`     | this addon's directory in the checkout (= runtime dir) |
 | `OFFLINE`       | `1` when installing from the GameCore OS ISO without network |
 | `PAYLOAD_DIR`   | offline assets dir (when `OFFLINE=1`) |

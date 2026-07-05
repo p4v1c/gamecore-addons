@@ -13,8 +13,10 @@ is running.
 gamecore-addon install rom-manager     # one command, nothing else
 ```
 
-The `gamecore-addon` CLI ships with the GameCore core (`/usr/local/bin`), and the
-GameCore Settings → Addons screen drives it for one-click install/remove.
+The `gamecore-addon` CLI ships with the GameCore core (`/usr/local/bin`); the
+graphical installer also offers the addons as checkboxes at install time, and
+the core backend exposes install/remove endpoints (`/api/addons/...`) for
+future UIs.
 
 ```bash
 gamecore-addon list            # available vs installed

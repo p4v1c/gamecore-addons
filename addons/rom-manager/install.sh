@@ -30,6 +30,7 @@ After=network-online.target
 [Service]
 Type=simple
 Environment=GAMECORE_PATH=${GAMECORE_PATH}
+Environment=GAMECORE_BACKEND_PORT=${GAMECORE_BACKEND_PORT:-8765}
 Environment=ADDON_PORT=${PORT}
 WorkingDirectory=${ADDON_DIR}
 ExecStart=${ADDON_DIR}/.venv/bin/python server.py

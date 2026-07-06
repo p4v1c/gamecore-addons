@@ -25,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+import memcard
 from catalog import CATALOG, resolve_base, scan
 
 ADDON_DIR = Path(__file__).parent
@@ -62,16 +63,50 @@ def _entries(emu_id: str, internal: bool = False) -> list[dict]:
             size = dir_size(e["path"]) if e["is_dir"] else e["path"].stat().st_size
         except OSError:
             size = 0
+        # Empty folders/files are phantoms — Wii channels or title dirs that were
+        # registered but never written (e.g. an empty title/<hi>/<lo>/data). They
+        # carry no save to back up, so they must not show up as "games".
+        if size == 0:
+            continue
+        card_id = f"{e['ci']}/{e['rel']}"
+
+        # A shared PS1/PS2 card holds every game's save in a card filesystem, so
+        # listing filenames alone shows none of them. Read the card open (see
+        # memcard.py) and surface each save inside as its own game. The card
+        # itself still appears under "Shared & system files" — you back up the
+        # whole card, individual in-card saves aren't separately deletable.
+        in_card = memcard.read_saves(e["path"]) if e["mode"] == "cards" else []
+        for s in in_card:
+            v = {
+                "id": card_id,                 # actions act on the whole card
+                "name": f"{s['title']} · in {e['rel']}",
+                "kind": "save",
+                "shared_card": False,
+                "in_card": e["rel"],
+                "save_key": s.get("name") or s["serial"],  # unique on-card save name
+                "is_dir": False,
+                "size": s["size"],
+                "sizeHuman": fmt_size(s["size"]),
+                "game_key": s["serial"],
+                "game_title": s["title"],
+            }
+            if internal:
+                v["_icon"] = None
+            out.append(v)
+
         d = {
-            "id": f"{e['ci']}/{e['rel']}",
+            "id": card_id,
             "name": e["rel"],
             "kind": e["kind"],
             "shared_card": e["mode"] == "cards",
             "is_dir": e["is_dir"],
             "size": size,
             "sizeHuman": fmt_size(size),
-            "game_key": e["key"],
-            "game_title": e["title"],
+            # A parsed card is forced to the shared bucket (its games are now
+            # listed individually above); an unparsed one keeps its resolver key
+            # so a per-game .mcd still attributes to its game.
+            "game_key": "" if in_card else e["key"],
+            "game_title": "" if in_card else e["title"],
         }
         if internal:
             d["_icon"] = e["icon"]
@@ -250,10 +285,20 @@ def game_icon(emu_id: str, key: str):
 
 
 @app.get("/api/saves/{emu_id}/download")
-def download(emu_id: str, id: str):
+def download(emu_id: str, id: str, save: str | None = None):
     target, cdir, _col = _resolve_entry(emu_id, id)
     if not target.exists():
         raise HTTPException(404, "not found")
+    if save:
+        # Export one game's save out of a shared card (.mcs for PS1, .psu PS2).
+        try:
+            fname, blob = memcard.export_save(target.read_bytes(), save)
+        except KeyError:
+            raise HTTPException(404, "that save is no longer on the card")
+        except Exception:
+            raise HTTPException(400, "could not read that save from the card")
+        return Response(blob, media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'})
     if target.is_dir():
         # zip paths are relative to the collection dir, so re-uploading the
         # zip restores nested games (Wii <hi>/<lo>, Switch <user>/<tid>…)
@@ -270,13 +315,31 @@ def download(emu_id: str, id: str):
 
 
 @app.post("/api/saves/{emu_id}/upload")
-async def upload(emu_id: str, collection: int, file: UploadFile = File(...)):
+async def upload(emu_id: str, collection: int, file: UploadFile = File(...),
+                 card: str | None = None):
     cdir, col = _collection_dir(emu_id, collection)
     cdir.mkdir(parents=True, exist_ok=True)
     name = Path(file.filename or "").name
     if not name:
         raise HTTPException(400, "no filename")
     data = await file.read()
+
+    if card is not None:
+        # Inject one game's save (.mcs/.psu) into a specific shared card. The
+        # whole card is backed up first; memcard.import_save builds a copy and
+        # verifies the save reads back before we ever overwrite the original.
+        card_path = cdir / Path(card).name
+        if not card_path.is_file():
+            raise HTTPException(404, "card not found")
+        try:
+            new_card = memcard.import_save(card_path.read_bytes(), data, name)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except Exception:
+            raise HTTPException(400, "could not add that save to the card")
+        _backup(card_path)
+        card_path.write_bytes(new_card)
+        return {"ok": True, "restored": [f"{name} → {card}"]}
 
     if name.lower().endswith(".zip") and col["mode"] in ("dirs", "any"):
         try:

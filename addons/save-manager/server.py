@@ -635,6 +635,23 @@ def _clear_dir(d: Path) -> None:
         shutil.rmtree(c) if c.is_dir() else c.unlink()
 
 
+def _yuzu_user_for(user_root: Path, tid: str) -> str:
+    """The yuzu-family account dir to restore a title into. Saves are keyed by
+    account and a box can have several, so target the profile that already holds
+    this title, else the one with the most saves — not just the first sorted
+    (which is often the empty all-zero account)."""
+    if not user_root.is_dir():
+        return "0" * 32
+    users = [p for p in user_root.iterdir() if p.is_dir()]
+    if not users:
+        return "0" * 32
+    for u in users:
+        if (u / tid).is_dir():
+            return u.name
+    return max(users, key=lambda u: sum(
+        1 for c in u.iterdir() if c.is_dir() and ".bak-" not in c.name)).name
+
+
 def _restore_normalized(emu_id: str, base: Path, zf: zipfile.ZipFile,
                         norm: list) -> list[str]:
     """Write switch-title/… x360-title/… ps4-title/… members onto this
@@ -672,9 +689,7 @@ def _restore_normalized(emu_id: str, base: Path, zf: zipfile.ZipFile,
                 restored.append(f"{tid} → {d.name}")
             else:                        # yuzu-family layout: dir name IS the title id
                 user_root = base / "nand/user/save/0000000000000000"
-                user = next((p.name for p in sorted(user_root.iterdir()) if p.is_dir()),
-                            "0" * 32) if user_root.is_dir() else "0" * 32
-                d = user_root / user / tid
+                d = user_root / _yuzu_user_for(user_root, tid) / tid
                 _backup(d)
                 _clear_dir(d)
                 for m, rest in files:

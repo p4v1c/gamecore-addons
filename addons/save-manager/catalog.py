@@ -174,15 +174,25 @@ def _base_savecount(emu_id: str, base: Path) -> int:
     return n
 
 
+_base_choice: dict = {}
+
+
 def resolve_base(emu_id: str) -> Path | None:
     """The emulator's data dir. When several candidate bases exist (e.g. a
     Switch box with both Ryujinx and a yuzu-family emulator installed), pick the
     one that actually holds the most saves rather than blindly the first — so a
-    freshly installed, empty emulator never hides an established save library."""
+    freshly installed, empty emulator never hides an established save library.
+    The save-count globs are memoized on the candidate dirs' mtimes: scan()
+    runs on every request and re-globbing each time would be wasteful."""
     existing = [b for b in CATALOG[emu_id]["bases"] if b.exists()]
     if len(existing) <= 1:
         return existing[0] if existing else None
-    return max(existing, key=lambda b: _base_savecount(emu_id, b))
+    sig = tuple((str(b), b.stat().st_mtime_ns) for b in existing)
+    hit = _base_choice.get(emu_id)
+    if hit is None or hit[0] != sig:
+        hit = (sig, max(existing, key=lambda b: _base_savecount(emu_id, b)))
+        _base_choice[emu_id] = hit
+    return hit[1]
 
 
 # ── caches ────────────────────────────────────────────────────────────────────

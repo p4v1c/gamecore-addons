@@ -83,6 +83,21 @@ body.gc-nav-present #sidebar, body.gc-nav-present #main{height:calc(100vh - 44px
 .drop-zone input{display:none}
 
 .empty{padding:18px;text-align:center;color:var(--text2);font-size:13px}
+.guide{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px}
+.guide summary{padding:12px 15px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text);user-select:none}
+.guide summary:hover{background:var(--surface2)}
+.guide-body{padding:4px 16px 16px;font-size:12.5px;line-height:1.6;color:var(--text)}
+.guide-body .g-sec{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text2);margin:14px 0 6px}
+.guide-body table{border-collapse:collapse;width:100%}
+.guide-body td{padding:5px 10px 5px 0;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.04)}
+.guide-body td:first-child{white-space:nowrap;color:var(--text2);width:110px}
+.guide-body code{background:var(--surface3);padding:1px 6px;border-radius:5px;font-size:11.5px;word-break:break-all}
+.guide-body ul{margin:0;padding-left:18px}
+.guide-body li{margin:3px 0}
+.guide-body pre{background:var(--surface3);padding:9px 12px;border-radius:8px;overflow-x:auto;font-size:11.5px;margin:6px 0}
+.guide-body a{color:var(--accent)}
+.g-note{color:var(--text2);font-size:11px}
+.top-actions{margin-left:auto;display:flex;gap:8px}
 .spinner{width:30px;height:30px;border:3px solid var(--surface3);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;margin:50px auto}
 @keyframes spin{to{transform:rotate(360deg)}}
 #welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--text2);text-align:center}
@@ -115,6 +130,7 @@ body.gc-nav-present #sidebar, body.gc-nav-present #main{height:calc(100vh - 44px
   <div class="top-bar" id="top-bar" style="display:none">
     <span class="top-title" id="top-title"></span>
     <span class="top-meta" id="top-meta"></span>
+    <span class="top-actions" id="top-actions"></span>
   </div>
   <div class="content" id="content">
     <div id="welcome">
@@ -165,26 +181,29 @@ async function load() {
   try { data = await jget(`/api/games/${active}`); }
   catch (e) { $('content').innerHTML = `<div class="empty">⚠ ${esc(e.message)}</div>`; return; }
   $('top-meta').textContent = data.base || '';
+  $('top-actions').innerHTML = (data.games.length || data.other.length)
+    ? `<button class="btn btn-dl" onclick="dlAll()" title="One zip with every save, state and card of this system">⬇ Full backup</button>` : '';
   render();
 }
 
 function fileHTML(e) {
-  const icon = e.in_card ? '🎴' : e.is_dir ? '📁' : e.shared_card ? '🗃️' : e.kind === 'state' ? '⏺' : '💾';
-  // Saves read out of a shared card can't be acted on individually — the file
-  // on disk is the whole card. Show the size and point downloads at the card.
+  const icon = e.in_card ? '🎴' : e.is_dir ? '📁' : e.card ? '🗃️' : e.kind === 'state' ? '⏺' : '💾';
   const meta = e.in_card
-    ? `${e.sizeHuman} · inside ${esc(e.in_card)} — back up the card to keep it`
+    ? `${e.sizeHuman} · inside ${esc(e.in_card)}`
     : `${e.sizeHuman}${e.is_dir ? ' · folder → .zip' : ''}`;
   let actions;
   if (e.in_card) {
-    actions = `<button class="btn btn-dl" onclick="dlSave('${esc(e.id)}','${esc(e.save_key)}')" title="Export just this game's save (.mcs / .psu)">⬇ save</button>`;
-  } else if (e.shared_card) {
+    // one save inside a memory card: export it or delete it individually
+    actions = `<button class="btn btn-dl" onclick="dlSave('${esc(e.id)}','${esc(e.save_key)}')" title="Export just this game's save (.mcs / .psu / .gci)">⬇ save</button>
+       <button class="btn btn-del" onclick="delSave('${esc(e.id)}','${esc(e.save_key)}','${esc(e.name)}')" title="Delete just this save from the card (the card is backed up first)">✕</button>`;
+  } else if (e.card) {
     // whole-card download + inject one game's save into this card
     const ci = e.id.split('/')[0];
     actions = `<button class="btn btn-dl" onclick="dl('${esc(e.id)}')" title="Download the whole card">⬇</button>
-       <label class="btn btn-dl" title="Add one game's .mcs/.psu save into this card">➕ save
+       <label class="btn btn-dl" title="Add one game's .mcs/.psu/.gci save into this card">➕ save
          <input type="file" accept=".mcs,.mcr,.psx,.psu,.gci" style="display:none"
-                onchange="inject(this.files[0], ${ci}, '${esc(e.name)}');this.value=''"></label>`;
+                onchange="inject(this.files[0], ${ci}, '${esc(e.name)}');this.value=''"></label>
+       <button class="btn btn-del" onclick="del('${esc(e.id)}','${esc(e.name)}')" title="Delete the whole card">✕</button>`;
   } else {
     actions = `<button class="btn btn-dl" onclick="dl('${esc(e.id)}')">⬇</button>
        <button class="btn btn-del" onclick="del('${esc(e.id)}','${esc(e.name)}')">✕</button>`;
@@ -213,6 +232,8 @@ function gameHTML(g) {
           <div class="game-name" title="${esc(g.title)}">${esc(g.title)}</div>
           <div class="game-sub">${g.saves} save${g.saves!==1?'s':''}${g.states?` · ${g.states} state${g.states!==1?'s':''}`:''} · ${g.sizeHuman}</div>
         </div>
+        <button class="btn btn-dl" onclick="event.stopPropagation();dlGame('${esc(g.key)}')"
+                title="Download everything for this game as one zip (restorable on any box via 'Restore full backup')">⬇ all</button>
         <div class="chev">›</div>
       </div>
       <div class="game-files">${g.entries.map(fileHTML).join('')}</div>
@@ -229,9 +250,12 @@ function render() {
   });
   let html = '';
 
+  // Transfer-from-PC guide
+  html += guideHTML(data.guide);
+
   // Restore
   html += `<div class="section-title">Restore</div>`;
-  html += `<div class="restore">${zones.map(c => dz(c, c.kind)).join('')}</div>`;
+  html += `<div class="restore">${zones.map(c => dz(c, c.kind)).join('')}${dzFull()}</div>`;
 
   // Games
   html += `<div class="section-title">Games — ${data.games.length}</div>`;
@@ -247,7 +271,35 @@ function render() {
     html += `<div class="game open"><div class="game-files" style="display:block;border:1px solid var(--border);border-radius:var(--radius)">
       ${data.other.map(fileHTML).join('')}</div></div>`;
   }
+
+  // Backups — everything a destructive action set aside, restorable in place
+  if (data.backups.length) {
+    html += `<div class="section-title">Backups — ${data.backups.length}</div>`;
+    html += `<div class="note">Taken automatically before every overwrite, restore or delete
+      (the 3 most recent per file are kept). <b>↩ Restore</b> puts one back in place —
+      the current version is itself backed up first, so you can always go back.</div>`;
+    html += `<div class="game open"><div class="game-files" style="display:block;border:1px solid var(--border);border-radius:var(--radius)">
+      ${data.backups.map(bakHTML).join('')}</div></div>`;
+  }
   $('content').innerHTML = html;
+}
+
+function bakHTML(b) {
+  const meta = `${b.when} · ${b.sizeHuman}${b.orig_exists ? '' : ' · <b>original was deleted</b>'}`;
+  return `
+    <div class="file">
+      <div class="f-icon">🕓</div>
+      <div class="f-body">
+        <div class="f-name">${esc(b.name)}</div>
+        <div class="f-meta">${meta}</div>
+      </div>
+      <div class="f-actions">
+        <button class="btn btn-dl" onclick="restoreBak('${esc(b.id)}','${esc(b.name)}','${esc(b.when)}')"
+                title="Put this backup back in place (the current version is backed up first)">↩ Restore</button>
+        <button class="btn btn-del" onclick="delBak('${esc(b.id)}','${esc(b.name)}')"
+                title="Delete this backup">✕</button>
+      </div>
+    </div>`;
 }
 
 function dz(col, kind) {
@@ -261,9 +313,85 @@ function dz(col, kind) {
     </label>`;
 }
 
+function dzFull() {
+  return `
+    <label class="drop-zone" ondragover="event.preventDefault();this.classList.add('hover')"
+           ondragleave="this.classList.remove('hover')"
+           ondrop="event.preventDefault();this.classList.remove('hover');const f=event.dataTransfer.files[0];if(f)upFull(f)">
+      <b>⬆ Restore full backup</b><br>a "⬇ all" / "Full backup" zip, or one made by the PC export tool.<br>
+      <span style="opacity:.7">Everything it touches is backed up first.</span>
+      <input type="file" accept=".zip" onchange="upFull(this.files[0]);this.value=''">
+    </label>`;
+}
+
+function guideHTML(g) {
+  if (!g) return '';
+  const rows = g.pc.map(l => `<tr><td>${esc(l.os)}</td><td><code>${esc(l.path)}</code>${l.note ? `<div class="g-note">${esc(l.note)}</div>` : ''}</td></tr>`).join('');
+  const li = xs => xs.map(x => `<li>${esc(x)}</li>`).join('');
+  return `
+  <details class="guide">
+    <summary>📥 Transfer saves from a PC — where they live &amp; what to copy</summary>
+    <div class="guide-body">
+      <div class="g-sec">On the PC</div>
+      <table>${rows}</table>
+      <div class="g-sec">What to grab</div>
+      <ul>${li(g.grab)}</ul>
+      <div class="g-sec">How to restore it here</div>
+      ${esc(g.restore)}
+      ${g.notes.length ? `<div class="g-sec">Good to know</div><ul>${li(g.notes)}</ul>` : ''}
+      <div class="g-sec">Or let the tool do it</div>
+      Download <a href="/tools/gamecore-save-export.py" download>gamecore-save-export.py</a>
+      and run it on the PC — it finds the saves of every emulator, packs upload-ready zips
+      and can push them straight to this box:
+      <pre>python gamecore-save-export.py --push http://${esc(location.host)}</pre>
+    </div>
+  </details>`;
+}
+
 function toggle(key){ openKeys.has(key)?openKeys.delete(key):openKeys.add(key); render(); }
 function dl(id){ window.location = `/api/saves/${active}/download?id=${encodeURIComponent(id)}`; }
 function dlSave(id, serial){ window.location = `/api/saves/${active}/download?id=${encodeURIComponent(id)}&save=${encodeURIComponent(serial)}`; }
+function dlGame(key){ window.location = `/api/games/${active}/download?key=${encodeURIComponent(key)}`; }
+function dlAll(){ window.location = `/api/saves/${active}/download-all`; }
+
+async function delSave(id, saveKey, name) {
+  if (!confirm(`Delete "${name}" from this memory card?\nThe whole card is backed up first.`)) return;
+  try {
+    const r = await fetch(`/api/saves/${active}?id=${encodeURIComponent(id)}&save=${encodeURIComponent(saveKey)}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || r.status);
+    toast(`Deleted from the card (backup kept): ${name}`); load(); loadEmulators();
+  } catch (e) { toast(`Delete failed: ${e.message}`, true); }
+}
+
+async function restoreBak(id, name, when) {
+  if (!confirm(`Restore the backup of "${name}" from ${when}?\nThe current version is backed up first.`)) return;
+  try {
+    const r = await fetch(`/api/backups/${active}/restore?id=${encodeURIComponent(id)}`, { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || r.status);
+    toast(`Backup restored: ${d.restored}`); load(); loadEmulators();
+  } catch (e) { toast(`Restore failed: ${e.message}`, true); }
+}
+
+async function delBak(id, name) {
+  if (!confirm(`Delete this backup of "${name}"?\nThis can't be undone (it's the safety copy itself).`)) return;
+  try {
+    const r = await fetch(`/api/backups/${active}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || r.status);
+    toast(`Backup deleted: ${name}`); load();
+  } catch (e) { toast(`Delete failed: ${e.message}`, true); }
+}
+
+async function upFull(file) {
+  if (!file) return;
+  const form = new FormData(); form.append('file', file);
+  try {
+    const r = await fetch(`/api/saves/${active}/upload-full`, { method: 'POST', body: form });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || r.status);
+    toast(`Restored: ${d.restored.join(', ')} (backups kept)`); load(); loadEmulators();
+  } catch (e) { toast(`Restore failed: ${e.message}`, true); }
+}
 
 async function inject(file, col, cardName) {
   if (!file) return;

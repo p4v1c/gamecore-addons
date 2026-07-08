@@ -20,12 +20,19 @@ A "collection" = one directory to scan:
 Identity sources per system:
   Sony     — full serial incl. dash (SLES-03736). RPCS3/PSP savedata folders
              each carry their own PARAM.SFO (TITLE) + ICON0.PNG; RPCS3 slots
-             of one game are grouped by that TITLE.
+             of one game are grouped by that TITLE, trophies by TROPCONF.SFM.
+             shadPS4 saves key on the CUSA serial; the title comes from the
+             installed game's param.sfo (fallback: the save's own MAINTITLE).
   Nintendo — title-id trees at the right depth: Wii <hi>/<lo> (lo = ASCII game
              code, matched to the RVZ headers of the box's ROMs), Wii U
              <hi>/<lo> (meta/meta.xml longname + iconTex.tga), 3DS
              title/<hi>/<lo> (matched to .3ds NCSD media ids), Switch
              <TITLE-ID> (well-known ids + ids found in ROM file names).
+             Ryujinx save dirs are install-numbered — ryujinx.py resolves them
+             to title ids via ExtraData0 / the imkvdb.arc indexer. Standalone
+             Dolphin .gci files are read for their game code.
+  X360     — content/<XUID>/<TitleID>; the save's display name is read from
+             its Headers/…/*.header package metadata.
   N64      — internal cartridge name (ROM header), matched to the box's ROMs
              for the display name and cover.
   GBA/DS   — ROM base name, matched to the GameCore covers. Unchanged.
@@ -34,9 +41,12 @@ import os
 import re
 from pathlib import Path, PurePosixPath
 
+import memcard
+import ryujinx
 import sfo
 
-HOME = Path.home()
+# GAMECORE_HOME lets tests (and unusual setups) point the scan somewhere else.
+HOME = Path(os.environ.get("GAMECORE_HOME") or Path.home())
 GC = Path(os.environ.get("GAMECORE_PATH", "/opt/GameCore"))
 COVERS = GC / "emu" / "covers"
 ROMS = GC / "emu"
@@ -54,7 +64,7 @@ CATALOG = {
     ]},
     "melonds": {"label": "Nintendo DS", "bases": [GC / "emu/melonds"], "collections": [
         C("", "files", "save", [".sav", ".nvm"], "rom"),
-        C("", "files", "state", [".mln", ".ml0", ".ml1", ".ml2", ".ml3"], "rom"),
+        C("", "files", "state", [".mln"] + [f".ml{i}" for i in range(1, 9)], "rom"),
     ]},
     "gopher64": {"label": "Nintendo 64", "bases": [
         HOME / ".var/app/io.github.gopher64.gopher64/data/gopher64", HOME / ".local/share/gopher64"], "collections": [
@@ -79,38 +89,100 @@ CATALOG = {
     "dolphin": {"label": "GameCube / Wii", "bases": [
         HOME / ".var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu", HOME / ".local/share/dolphin-emu"], "collections": [
         C("Wii/title", "dirs", "save", (), "wii", glob="*/*/data"),
-        C("GC", "cards", "save", [".raw", ".gci", ".sav"], "card"),
+        C("GC", "cards", "save", [".raw", ".gci", ".sav"], "gc_card"),
         C("StateSaves", "files", "state", (), "dolphin_state"),
     ]},
     "rpcs3": {"label": "PlayStation 3", "bases": [
         HOME / ".config/rpcs3", HOME / ".var/app/net.rpcs3.RPCS3/config/rpcs3"], "collections": [
         C("dev_hdd0/home/00000001/savedata", "dirs", "save", (), "rpcs3_save"),
+        C("dev_hdd0/home/00000001/trophy", "dirs", "save", (), "rpcs3_trophy"),
         C("savestates", "any", "state", (), "rpcs3_state"),
     ]},
     "azahar": {"label": "Nintendo 3DS", "bases": [
         HOME / ".var/app/org.azahar_emu.Azahar/data/azahar-emu",
         HOME / ".local/share/azahar-emu", HOME / ".local/share/citra-emu"], "collections": [
         C("sdmc/Nintendo 3DS", "dirs", "save", (), "n3ds", glob="*/*/title/*/*"),
+        # extdata carries real progress for some games (Animal Crossing NL…);
+        # extdata ids don't map cleanly to title ids, so it stays "shared"
+        C("sdmc/Nintendo 3DS", "dirs", "save", (), "shared", glob="*/*/extdata/*/*"),
         C("states", "files", "state", (), "n3ds_state"),
     ]},
     "cemu": {"label": "Wii U", "bases": [
         HOME / ".var/app/info.cemu.Cemu/data/Cemu", HOME / ".local/share/Cemu"], "collections": [
         C("mlc01/usr/save", "dirs", "save", (), "wiiu", glob="*/*"),
     ]},
-    "citron": {"label": "Nintendo Switch", "bases": [
-        HOME / ".local/share/citron", HOME / ".var/app/io.github.ryubing.Ryujinx/config/Ryujinx"], "collections": [
+    "ryujinx": {"label": "Nintendo Switch", "bases": [
+        HOME / ".var/app/io.github.ryubing.Ryujinx/config/Ryujinx",
+        HOME / ".config/Ryujinx"], "collections": [
+        # Ryujinx layout: install-specific save ids, identified via ExtraData /
+        # the imkvdb.arc indexer (see ryujinx.py)
+        C("bis/user/save", "dirs", "save", (), "ryujinx_save"),
+        # yuzu-family layout: the folder name IS the title id. No such emulator
+        # ships a base here by default; a machine that keeps one (a legacy
+        # install) can point at it with local_bases.json (see _load_local_bases).
         C("nand/user/save", "dirs", "save", (), "switch", glob="0000000000000000/*/*"),
         C("nand/user/save/cache", "dirs", "save", (), "shared"),
-        C("bis/user/save", "dirs", "save", (), "shared"),
+    ]},
+    "xenia": {"label": "Xbox 360", "bases": [GC / "lib/xenia"], "collections": [
+        # Canary is portable on Windows builds (also under Wine): saves live in
+        # content/<profile XUID>/<TitleID>/ next to the exe. That per-title dir
+        # holds 00000001/ (the save packages) AND Headers/ (their metadata) —
+        # both are needed for a transfer, so the title dir is the save unit.
+        C("content", "dirs", "save", (), "x360", glob="*/*"),
+    ]},
+    "shadps4": {"label": "PlayStation 4", "bases": [
+        HOME / ".var/app/net.shadps4.shadPS4/data/shadPS4",
+        HOME / ".local/share/shadPS4"], "collections": [
+        C("home/1/savedata", "dirs", "save", (), "ps4_save", glob="*/*"),   # ≥ v0.16
+        C("savedata/1", "dirs", "save", (), "ps4_save", glob="*/*"),        # ≤ v0.15
     ]},
 }
 
 
+def _load_local_bases() -> None:
+    """Merge machine-specific save locations from an optional, gitignored
+    local_bases.json next to this module — extra data dirs a particular box
+    keeps that don't belong in the shared repo (e.g. a legacy Switch emulator).
+    Format: {"<emu id>": ["/absolute/path", ...]}. Paths are prepended so
+    resolve_base still weighs them by save count, not order."""
+    import json
+    p = Path(__file__).parent / "local_bases.json"
+    try:
+        extra = json.loads(p.read_text())
+    except (OSError, ValueError):
+        return
+    for emu_id, paths in extra.items():
+        if emu_id in CATALOG and isinstance(paths, list):
+            CATALOG[emu_id]["bases"] = [Path(x) for x in paths] + CATALOG[emu_id]["bases"]
+
+
+_load_local_bases()
+
+
+def _base_savecount(emu_id: str, base: Path) -> int:
+    """Cheap count of save entries a base would yield (globs only, no resolvers
+    or metadata reads) — used to disambiguate between several existing bases."""
+    n = 0
+    for col in CATALOG[emu_id]["collections"]:
+        cdir = base / col["subpath"] if col["subpath"] else base
+        if not cdir.is_dir():
+            continue
+        try:
+            n += sum(1 for _ in _candidates(cdir, col))
+        except OSError:
+            pass
+    return n
+
+
 def resolve_base(emu_id: str) -> Path | None:
-    for base in CATALOG[emu_id]["bases"]:
-        if base.exists():
-            return base
-    return None
+    """The emulator's data dir. When several candidate bases exist (e.g. a
+    Switch box with both Ryujinx and a yuzu-family emulator installed), pick the
+    one that actually holds the most saves rather than blindly the first — so a
+    freshly installed, empty emulator never hides an established save library."""
+    existing = [b for b in CATALOG[emu_id]["bases"] if b.exists()]
+    if len(existing) <= 1:
+        return existing[0] if existing else None
+    return max(existing, key=lambda b: _base_savecount(emu_id, b))
 
 
 # ── caches ────────────────────────────────────────────────────────────────────
@@ -355,8 +427,8 @@ def _res_ps_serial(base, cdir, rel):
     s = _sony_serial(rel.name)
     if s:
         return s, s, None
-    key = rel.name.split(".")[0]
-    return key, key, None
+    # serial-less states (resume.sav, savestate_1.sav…) are global, not a game
+    return "", "", None
 
 
 def _res_card_or_serial(base, cdir, rel):
@@ -365,6 +437,19 @@ def _res_card_or_serial(base, cdir, rel):
 
 
 def _res_card(base, cdir, rel):
+    return "", "", None
+
+
+def _res_gc_card(base, cdir, rel):
+    """Dolphin's GC dir mixes raw .raw cards (shared) with GCI-folder saves
+    (GC/<region>/Card A/<one .gci per save> — the modern default). A standalone
+    .gci is one game's save: read its 64-byte header for the game code."""
+    if rel.suffix.lower() == ".gci":
+        info = memcard.gci_info(cdir / rel)
+        if info:
+            stem = _wii_names().get(info["code"])
+            title = _clean_stem(stem) if stem else (info["name"] or info["code"])
+            return info["code"], title, cover_for(stem or "", title)
     return "", "", None
 
 
@@ -379,6 +464,46 @@ def _res_rpcs3_save(base, cdir, rel):
     key = title or (m.group(0) if m else rel.name)
     icon = d / "ICON0.PNG"
     return key, title or key, icon if icon.is_file() else None
+
+
+def _match_savedata_title(base: Path, title: str) -> str:
+    """The savedata game a trophy title belongs to, or "". A trophy's
+    TROPCONF name and the savedata's PARAM.SFO TITLE rarely match byte-for-byte
+    (localization, ® / ™, "…Trophies" suffixes), so compare normalized and
+    accept a containment either way (guarded by length to avoid silly hits)."""
+    want = _norm(title)
+    if len(want) < 4:
+        return ""
+    idx = _savedata_index(base, "dev_hdd0/home/00000001/savedata", "rpcs3")
+    for real, _icon in idx.values():
+        n = _norm(real)
+        if not n:
+            continue
+        if n == want or (len(want) >= 6 and want in n) or (len(n) >= 6 and n in want):
+            return real
+    return ""
+
+
+def _res_rpcs3_trophy(base, cdir, rel):
+    """Trophy set (dev_hdd0/.../trophy/NPWRxxxxx_00). TROPCONF.SFM names the
+    game; group the trophy with that game's savedata when we can map it, else
+    send it to "Shared & system files" rather than inventing a phantom game."""
+    d = cdir / rel
+    title = ""
+    for conf in ("TROPCONF.SFM", "TROP.SFM"):
+        try:
+            txt = (d / conf).read_text(errors="ignore")
+        except OSError:
+            continue
+        m = re.search(r"<title-name>\s*([^<]+?)\s*</title-name>", txt)
+        if m:
+            title = _collapse(m.group(1))
+            break
+    game = _match_savedata_title(base, title) if title else ""
+    if not game:
+        return "", "", None
+    icon = d / "ICON0.PNG"
+    return game, game, icon if icon.is_file() else None
 
 
 def _res_rpcs3_state(base, cdir, rel):
@@ -471,15 +596,95 @@ def _res_switch(base, cdir, rel):
     return tid, name or tid, cover_for(name or "")
 
 
+def _res_ryujinx_save(base, cdir, rel):
+    """Ryujinx bis/user/save/<install-specific id> → title id via ExtraData /
+    the imkvdb.arc indexer (ryujinx.py). Unidentifiable dirs go to shared."""
+    if not re.fullmatch(r"[0-9A-Fa-f]{16}", rel.name):
+        return "", "", None
+    tid, _typ = ryujinx.identify(base, cdir / rel)
+    if not tid:
+        return "", "", None
+    name = _switch_names().get(tid)
+    return tid, name or tid, cover_for(name or "")
+
+
+def _x360_header_name(d: Path) -> str:
+    """Save display name from a Xenia content header (XCONTENT_DATA: u32
+    device id, u32 content type, then a UTF-16 display name — guest structs
+    are big-endian, but be tolerant and pick whichever decodes cleanly)."""
+    hdr = d / "Headers/00000001"
+    if not hdr.is_dir():
+        return ""
+    for h in sorted(hdr.iterdir()):
+        if h.suffix != ".header" or not h.is_file():
+            continue
+        try:
+            raw = h.read_bytes()[8:8 + 256]
+        except OSError:
+            continue
+        for codec in ("utf-16-be", "utf-16-le"):
+            name = raw.decode(codec, "ignore").split("\x00", 1)[0].strip()
+            if len(name) >= 3 and all(c.isprintable() for c in name):
+                return _collapse(name)
+    return ""
+
+
+def _res_x360(base, cdir, rel):
+    """content/<XUID>/<TitleID>. The dashboard title (FFFE07D1) is the profile
+    package and XUID 0 holds profile-less content (DLC) — both shared."""
+    xuid, tid = rel.parts[0].upper(), rel.parts[1].upper()
+    if tid == "FFFE07D1" or xuid == "0000000000000000":
+        return "", "", None
+    name = _x360_header_name(cdir / rel)
+    return tid, name or tid, cover_for(name)
+
+
+def _ps4_titles() -> dict:
+    """TITLE_ID → (TITLE, icon) from the game dumps in emu/shadps4/<Game>/."""
+    d = ROMS / "shadps4"
+
+    def build():
+        out = {}
+        for g in sorted(p for p in d.iterdir() if p.is_dir()):
+            meta = sfo.parse(g / "sce_sys/param.sfo")
+            tid = str(meta.get("TITLE_ID", "")).upper()
+            if not tid:
+                continue
+            icon = g / "sce_sys/icon0.png"
+            out.setdefault(tid, (_collapse(str(meta.get("TITLE", ""))) or g.name,
+                                 icon if icon.is_file() else None))
+        return out
+    return _cached("ps4", d, build)
+
+
+def _res_ps4_save(base, cdir, rel):
+    """savedata/<CUSA#####>/<savedir>. Title from the installed game's
+    param.sfo; the save's own param.sfo MAINTITLE as a fallback."""
+    cusa = rel.parts[0].upper()
+    d = cdir / rel
+    hit = _ps4_titles().get(cusa)
+    title = hit[0] if hit else ""
+    if not title:
+        t = _collapse(str(sfo.parse(d / "sce_sys/param.sfo").get("MAINTITLE", "")))
+        if t.lower() not in ("", "saved data"):     # skip the SDK placeholder
+            title = t
+    icon = d / "sce_sys/icon0.png"
+    if not icon.is_file():
+        icon = (hit[1] if hit and hit[1] else None) or cover_for(title)
+    return cusa, title or cusa, icon
+
+
 _RESOLVERS = {
     "rom": _res_rom, "n64": _res_n64,
     "ps_serial": _res_ps_serial, "card_or_serial": _res_card_or_serial,
-    "card": _res_card, "shared": _res_shared,
-    "rpcs3_save": _res_rpcs3_save, "rpcs3_state": _res_rpcs3_state,
+    "card": _res_card, "gc_card": _res_gc_card, "shared": _res_shared,
+    "rpcs3_save": _res_rpcs3_save, "rpcs3_trophy": _res_rpcs3_trophy,
+    "rpcs3_state": _res_rpcs3_state,
     "psp_save": _res_psp_save, "psp_state": _res_psp_state,
     "wii": _res_wii, "dolphin_state": _res_dolphin_state,
     "n3ds": _res_n3ds, "n3ds_state": _res_n3ds_state,
-    "wiiu": _res_wiiu, "switch": _res_switch,
+    "wiiu": _res_wiiu, "switch": _res_switch, "ryujinx_save": _res_ryujinx_save,
+    "x360": _res_x360, "ps4_save": _res_ps4_save,
 }
 
 

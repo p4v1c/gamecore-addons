@@ -8,6 +8,7 @@ like one opaque blob.
   read_saves(path)                 → [{"serial","title","size","name"}, ...]
   export_save(card_bytes, key)     → (filename, blob)   single save, .mcs/.psu/.gci
   import_save(card_bytes, blob, n) → new_card_bytes      inject one save
+  delete_save(card_bytes, key)     → new_card_bytes      remove one save
 
 "serial" groups a card's saves by game; "name" is the unique on-card save name
 used to export exactly one save (a GameCube game can have several).
@@ -15,10 +16,14 @@ used to export exactly one save (a GameCube game can have several).
 Everything is defensive:
   * read_saves never raises — an unrecognised/corrupt card yields [].
   * export_save raises KeyError if the serial isn't on the card.
-  * import_save builds a *copy*, then re-parses it and refuses (raises
-    ValueError) unless the new save reads back intact — so a botched inject can
-    never damage the caller's original card. It also refuses ECC PS2 cards,
-    where writing without recomputing ECC would corrupt the card.
+  * import_save and delete_save build a *copy*, then re-parse it and refuse
+    (raise ValueError) unless the result reads back as expected — so a botched
+    write can never damage the caller's original card. Both refuse ECC PS2
+    cards, where writing without recomputing ECC would corrupt the card.
+  * delete_save mirrors what the consoles do: PS1 frames flip to the deleted
+    state (0xA1-0xA3, data recoverable), PS2 root entries lose their EXISTS
+    bit and their clusters are freed, GC directory slots are wiped (0xFF) and
+    their BAT chain freed.
 
 Formats:
   PS1 — 128 KiB, 16 blocks of 8 KiB. Block 0 is a 16-frame directory; each
@@ -224,6 +229,34 @@ def _ps1_import(data: bytes, blob: bytes) -> bytes:
     return bytes(out)
 
 
+def _ps1_delete(data: bytes, key: str) -> bytes:
+    """Flip every frame of the save's chain to its deleted state (0x51→0xA1,
+    0x52→0xA2, 0x53→0xA3) — exactly what the console does; data blocks stay."""
+    off = _ps1_offset(data)
+    if off is None:
+        raise KeyError(key)
+    out = bytearray(data)
+    card = memoryview(out)[off:off + _PS1_LEN]
+    start = name = None
+    for slot in range(1, 16):
+        e = _ps1_entry(bytes(card), slot)
+        nm = _ps1_name(e)
+        if e[0] == 0x51 and (nm == key or _serial(nm) == key):
+            start, name = slot, nm
+            break
+    if start is None:
+        raise KeyError(key)
+    for slot in _ps1_chain(bytes(card), start):
+        frame = bytearray(card[slot * _PS1_FRAME:(slot + 1) * _PS1_FRAME])
+        frame[0] = 0xA0 | (frame[0] & 0x0F)
+        _ps1_cksum(frame)
+        card[slot * _PS1_FRAME:(slot + 1) * _PS1_FRAME] = frame
+    del card
+    if any(s["name"] == name for s in read_saves(bytes(out))):
+        raise ValueError("Could not remove the save from the card (nothing was written).")
+    return bytes(out)
+
+
 # ══ PS2 ════════════════════════════════════════════════════════════════════════
 # 8 MiB FAT filesystem. The superblock gives geometry; the FAT is doubly
 # indirect (ifc_list → indirect-FAT clusters → FAT clusters). Directory entries
@@ -343,12 +376,17 @@ def _ps2_saves(data: bytes) -> list[dict]:
     return saves
 
 
-def _ps2_folder(v: _Ps2, key: str):
-    for mode, _l, first, name, e in v.entries(v.root_cluster, v.root_len()):
+def _ps2_folder_at(v: _Ps2, key: str):
+    for i, (mode, _l, first, name, e) in enumerate(v.entries(v.root_cluster, v.root_len())):
         if (mode & _DF_EXISTS) and (mode & _DF_DIRECTORY) and name not in (".", "..") \
                 and (name == key or _serial(name) == key):
-            return name, first, e
+            return i, name, first, e
     raise KeyError(key)
+
+
+def _ps2_folder(v: _Ps2, key: str):
+    _i, name, first, e = _ps2_folder_at(v, key)
+    return name, first, e
 
 
 def _ps2_export(data: bytes, key: str) -> tuple[str, bytes]:
@@ -423,8 +461,8 @@ def _ps2_import(data: bytes, blob: bytes) -> bytes:
     def walk(rel, cnt):
         used.update(v.chain(rel))
         for mode, sublen, first, name, _e in v.entries(rel, cnt):
-            if name in (".", ".."):
-                continue
+            if name in (".", "..") or not mode & _DF_EXISTS:
+                continue                    # deleted entries' clusters are free
             if mode & _DF_DIRECTORY:
                 walk(first, sublen)         # count lives in the parent entry
             elif mode & _DF_FILE:
@@ -500,6 +538,34 @@ def _ps2_import(data: bytes, blob: bytes) -> bytes:
     out = bytes(v.data)
     if not any(s["serial"] == serial for s in read_saves(out)):
         raise ValueError("Could not place the save on the card (nothing was written).")
+    return out
+
+
+def _ps2_delete(data: bytes, key: str) -> bytes:
+    v = _Ps2(data, mutable=True)                # raises on ECC cards
+    idx, name, first, folder_e = _ps2_folder_at(v, key)
+    flen = struct.unpack_from("<I", folder_e, 4)[0]
+
+    # free every file's cluster chain, then the folder's own directory chain
+    for mode, _l, f, n, _e in list(v.entries(first, flen)):
+        if n in (".", "..") or not mode & _DF_EXISTS:
+            continue
+        if mode & _DF_FILE:
+            for rel in list(v.chain(f)):
+                v.set_fat(rel, _FAT_END)        # no USED bit = free
+    for rel in list(v.chain(first)):
+        v.set_fat(rel, _FAT_END)
+
+    # clear the EXISTS bit on the root entry — how the console marks deletion
+    ci, oi = divmod(idx, v.dpc)
+    root_chain = list(v.chain(v.root_cluster))
+    base = (v.alloc_off + root_chain[ci]) * v.cl + oi * 512
+    mode = struct.unpack_from("<H", v.data, base)[0]
+    struct.pack_into("<H", v.data, base, mode & ~_DF_EXISTS)
+
+    out = bytes(v.data)
+    if any(s["name"] == name for s in read_saves(out)):
+        raise ValueError("Could not remove the save from the card (nothing was written).")
     return out
 
 
@@ -675,7 +741,53 @@ def _gc_write_bat(out, bat, counter):
     out[4 * _GC_BLOCK:5 * _GC_BLOCK] = bat
 
 
-# ══ public export/import ═══════════════════════════════════════════════════════
+def _gc_delete(data: bytes, key: str) -> bytes:
+    out = bytearray(data)
+    dctr, _dblk, dcur = _gc_dir(out)
+    bctr, _bblk, bcur = _gc_bat(out)
+    d = bytearray(dcur)
+    bat = bytearray(bcur)
+    hit = None
+    for i, code, name, first, count, _e in _gc_entries(d):
+        if name == key or code.upper() == key:
+            hit = (i, name, first, count)
+            break
+    if hit is None:
+        raise KeyError(key)
+    i, name, first, count = hit
+    blocks = _gc_chain(out, bat, first, count)
+    for blk in blocks:                          # free the BAT chain
+        struct.pack_into(">H", bat, 0x0A + (blk - 5) * 2, 0)
+    struct.pack_into(">H", bat, 0x0006, (_be16(bat, 0x0006) + len(blocks)) & 0xFFFF)
+    d[i * _GC_ENT:(i + 1) * _GC_ENT] = b"\xFF" * _GC_ENT   # empty directory slot
+    _gc_write_dir(out, d, (dctr + 1) & 0xFFFF)
+    _gc_write_bat(out, bat, (bctr + 1) & 0xFFFF)
+    if any(s["name"] == name for s in read_saves(bytes(out))):
+        raise ValueError("Could not remove the save from the card (nothing was written).")
+    return bytes(out)
+
+
+def gci_info(path) -> dict | None:
+    """Header of a STANDALONE .gci file (Dolphin GCI-folder mode) →
+    {"code": 4-char game id, "name": internal save name}, or None."""
+    try:
+        if hasattr(path, "open"):        # only the header — scans hit many GCIs
+            with path.open("rb") as f:
+                h = f.read(_GC_ENT)
+        else:
+            h = _read(path)[:_GC_ENT]
+    except Exception:
+        return None
+    if len(h) < _GC_ENT or h[0] == 0xFF:
+        return None
+    code = h[0:4].decode("ascii", "ignore").strip()
+    if len(code) != 4 or not code.isalnum():
+        return None
+    name = h[0x08:0x08 + 0x20].split(b"\x00", 1)[0].decode("ascii", "ignore")
+    return {"code": code.upper(), "name": name}
+
+
+# ══ public export/import/delete ════════════════════════════════════════════════
 
 def export_save(card_bytes: bytes, key: str) -> tuple[str, bytes]:
     """One game's save as a standalone file (.mcs PS1, .psu PS2, .gci GameCube)."""
@@ -685,6 +797,19 @@ def export_save(card_bytes: bytes, key: str) -> tuple[str, bytes]:
         return _ps1_export(card_bytes, key)
     if _is_gc(card_bytes):
         return _gc_export(card_bytes, key)
+    raise KeyError(key)
+
+
+def delete_save(card_bytes: bytes, key: str) -> bytes:
+    """Remove one game's save from a card; returns the new card bytes.
+    Raises KeyError if the save isn't on the card, ValueError (user-facing
+    message) on anything else — the caller's original card is never touched."""
+    if _is_ps2(card_bytes):
+        return _ps2_delete(card_bytes, key)
+    if _ps1_offset(card_bytes) is not None:
+        return _ps1_delete(card_bytes, key)
+    if _is_gc(card_bytes):
+        return _gc_delete(card_bytes, key)
     raise KeyError(key)
 
 

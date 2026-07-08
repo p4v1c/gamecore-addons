@@ -35,7 +35,7 @@ from fastapi.staticfiles import StaticFiles
 
 import memcard
 import ryujinx as ryu
-from catalog import CATALOG, resolve_base, scan
+from catalog import CATALOG, resolve_base, scan, sony_game
 from guide import GUIDE
 
 ADDON_DIR = Path(__file__).parent
@@ -86,9 +86,13 @@ def _entries(emu_id: str, internal: bool = False) -> list[dict]:
         # individually exportable and deletable.
         in_card = memcard.read_saves(e["path"]) if e["mode"] == "cards" else []
         for s in in_card:
+            # prefer the real game name + cover (from the ROM) over the card's
+            # own short title ("NFS MW V"); fall back to the card title/serial
+            rom_title, rom_icon = sony_game(s["serial"])
+            title = rom_title or s["title"]
             v = {
                 "id": card_id,                 # actions act on the whole card
-                "name": f"{s['title']} · in {e['rel']}",
+                "name": f"{title} · in {e['rel']}",
                 "kind": "save",
                 "card": False,
                 "in_card": e["rel"],
@@ -97,10 +101,10 @@ def _entries(emu_id: str, internal: bool = False) -> list[dict]:
                 "size": s["size"],
                 "sizeHuman": fmt_size(s["size"]),
                 "game_key": s["serial"],
-                "game_title": s["title"],
+                "game_title": title,
             }
             if internal:
-                v["_icon"] = None
+                v["_icon"] = rom_icon
             out.append(v)
 
         # Attribute the card itself: a card whose filename carries a serial, or
@@ -111,7 +115,8 @@ def _entries(emu_id: str, internal: bool = False) -> list[dict]:
         serials = {s["serial"] for s in in_card}
         if in_card and not key:
             if len(serials) == 1:
-                key, title = in_card[0]["serial"], in_card[0]["title"]
+                key = in_card[0]["serial"]
+                title = sony_game(key)[0] or in_card[0]["title"]
             else:
                 key, title = "", ""
         d = {
@@ -301,6 +306,10 @@ def game_icon(emu_id: str, key: str):
     _emu(emu_id)
     _base, raw = scan(emu_id)
     icon = next((e["icon"] for e in raw if e["key"] == key and e["icon"]), None)
+    if not icon and emu_id in ("pcsx2", "duckstation") and re.fullmatch(r"[A-Z]{4}-\d{5}", key):
+        # a game that lives inside a shared card isn't in scan()'s entries
+        # (attributed at the server layer) — resolve its cover by serial
+        icon = sony_game(key)[1]
     if not icon or not icon.is_file():
         raise HTTPException(404)
     if icon.suffix.lower() == ".tga":

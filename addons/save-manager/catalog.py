@@ -233,6 +233,85 @@ def _collapse(s: str) -> str:
     return re.sub(r"\s+", " ", str(s)).strip()
 
 
+# ── PlayStation disc serials (map a save's serial back to a real game) ─────────
+# The save side only knows the serial (SLES-53557); the real title + cover live
+# with the ROM. A PS1/PS2 disc records its serial in SYSTEM.CNF (BOOT/BOOT2 =
+# cdrom0:\SLES_535.57;1). Read it straight from the disc image — ISO9660, either
+# 2048-byte logical sectors (.iso) or 2352-byte raw CD sectors (.bin).
+
+_PS_DISC_EXTS = (".iso", ".bin", ".img")
+
+
+def disc_serial(path: Path) -> str | None:
+    """The disc serial (normalized SLES-53557) read from a PS1/PS2 image, or
+    None for anything we can't read (compressed .chd/.cso, non-disc, errors)."""
+    try:
+        with path.open("rb") as f:
+            head = f.read(16)
+            if head[:12] == b"\x00" + b"\xff" * 10 + b"\x00":   # raw CD sync
+                size, off = 2352, (24 if head[15] == 2 else 16)   # MODE2 vs MODE1
+            else:
+                size, off = 2048, 0
+
+            def sect(lba: int) -> bytes:
+                f.seek(lba * size + off)
+                return f.read(2048)
+
+            pvd = sect(16)                          # ISO9660 primary volume desc
+            if pvd[1:6] != b"CD001":
+                return None
+            root = pvd[156:190]
+            ext = int.from_bytes(root[2:6], "little")
+            length = int.from_bytes(root[10:14], "little")
+            data = b"".join(sect(ext + i) for i in range((length + 2047) // 2048))
+
+            cnf = None
+            i = 0
+            while i < len(data):
+                rlen = data[i]
+                if rlen == 0:                       # padding → next sector
+                    i = ((i // 2048) + 1) * 2048
+                    continue
+                name = data[i + 33:i + 33 + data[i + 32]].split(b";")[0].upper()
+                if name == b"SYSTEM.CNF":
+                    cnf = (int.from_bytes(data[i + 2:i + 6], "little"),
+                           int.from_bytes(data[i + 10:i + 14], "little"))
+                    break
+                i += rlen
+            if not cnf:
+                return None
+            cdata = b"".join(sect(cnf[0] + i) for i in range((cnf[1] + 2047) // 2048))
+            m = re.search(rb"([A-Za-z]{4})_(\d{3})\.(\d{2})", cdata[:cnf[1]])
+            return f"{m.group(1).decode().upper()}-{m.group(2).decode()}{m.group(3).decode()}" if m else None
+    except Exception:
+        return None
+
+
+def _ps_titles() -> dict:
+    """serial → ROM stem, across every PlayStation ROM dir on the box."""
+    out = {}
+    for sub in ("duckstation", "pcsx2"):
+        d = ROMS / sub
+
+        def build(d=d):
+            m = {}
+            for f in sorted(d.iterdir()):
+                if f.suffix.lower() in _PS_DISC_EXTS and (s := disc_serial(f)):
+                    m.setdefault(s, f.stem)
+            return m
+        out.update(_cached(f"ps:{sub}", d, build))
+    return out
+
+
+def sony_game(serial: str) -> tuple[str, Path | None]:
+    """(real title, cover Path|None) for a PS serial, or ("", None) if no ROM."""
+    stem = _ps_titles().get(serial)
+    if not stem:
+        return "", None
+    title = _clean_stem(stem)
+    return title, cover_for(stem, title)
+
+
 # ── ROM-header maps (title-id / internal name → display name + cover) ─────────
 
 def _n64_names() -> dict:
@@ -425,15 +504,19 @@ def _res_n64(base, cdir, rel):
 
 def _res_ps_serial(base, cdir, rel):
     s = _sony_serial(rel.name)
-    if s:
-        return s, s, None
-    # serial-less states (resume.sav, savestate_1.sav…) are global, not a game
-    return "", "", None
+    if not s:
+        # serial-less states (resume.sav, savestate_1.sav…) are global, not a game
+        return "", "", None
+    title, icon = sony_game(s)             # real name + cover if the ROM is here
+    return s, title or s, icon
 
 
 def _res_card_or_serial(base, cdir, rel):
-    s = _sony_serial(rel.name)              # per-game card (SLES-03736.mcd)
-    return (s, s, None) if s else ("", "", None)
+    s = _sony_serial(rel.name)             # per-game card (SLES-03736.mcd)
+    if not s:
+        return "", "", None
+    title, icon = sony_game(s)
+    return s, title or s, icon
 
 
 def _res_card(base, cdir, rel):

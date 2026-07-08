@@ -244,8 +244,8 @@ def scan_ryujinx(override):
     bases = ([override] if override else
              [APPDATA / "Ryujinx", HOME / ".config/Ryujinx",
               HOME / ".var/app/io.github.ryubing.Ryujinx/config/Ryujinx",
-              APPDATA / "yuzu", APPDATA / "citron", APPDATA / "sudachi",
-              HOME / ".local/share/yuzu", HOME / ".local/share/citron"])
+              APPDATA / "yuzu", APPDATA / "sudachi",
+              HOME / ".local/share/yuzu", HOME / ".local/share/sudachi"])
     out, used = [], None
     for b in bases:
         b = Path(b)

@@ -148,7 +148,7 @@ GUIDE = {
             {"os": "Windows", "path": "%AppData%\\Ryujinx\\bis\\user\\save",
              "note": "portable mode: portable\\bis\\user\\save next to the exe"},
             {"os": "Linux", "path": "~/.config/Ryujinx/bis/user/save", "note": ""},
-            {"os": "yuzu/citron", "path": "%AppData%\\yuzu\\nand\\user\\save\\0000000000000000\\<user>\\<titleid>",
+            {"os": "yuzu/sudachi", "path": "%AppData%\\yuzu\\nand\\user\\save\\0000000000000000\\<user>\\<titleid>",
              "note": "yuzu-family keeps saves per title id directly"},
         ],
         "grab": ["Ryujinx: right-click the game → 'Open User Save Directory' → copy the contents of 0\\ "

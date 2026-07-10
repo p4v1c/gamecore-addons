@@ -4,3 +4,4 @@ node_modules/
 addons/*/web/gamecore-nav.js
 addons/*/web/gamecore-nav.css
 addons/*/local_bases.json
+addons/local-coop/state/

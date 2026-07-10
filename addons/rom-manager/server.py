@@ -202,7 +202,7 @@ async def upload_rom(system_id: str, file: UploadFile = File(...)):
 
 
 @app.delete("/api/roms/{system_id}/{filename}")
-def delete_rom(system_id: str, filename: str):
+async def delete_rom(system_id: str, filename: str):
     system = get_system(system_id)
     roms_path = roms_path_of(system)
     if not roms_path:
@@ -221,6 +221,8 @@ def delete_rom(system_id: str, filename: str):
         target.unlink()
     else:
         raise HTTPException(404)
+    # keep the TV UI in sync after a deletion too (same event family as upload)
+    await notify_core("rom_deleted", {"system_id": system_id, "filename": safe})
     return {"ok": True}
 
 

@@ -529,10 +529,6 @@ def _res_card_or_serial(base, cdir, rel):
     return s, title or s, icon
 
 
-def _res_card(base, cdir, rel):
-    return "", "", None
-
-
 def _res_gc_card(base, cdir, rel):
     """Dolphin's GC dir mixes raw .raw cards (shared) with GCI-folder saves
     (GC/<region>/Card A/<one .gci per save> — the modern default). A standalone
@@ -770,7 +766,10 @@ def _res_ps4_save(base, cdir, rel):
 _RESOLVERS = {
     "rom": _res_rom, "n64": _res_n64,
     "ps_serial": _res_ps_serial, "card_or_serial": _res_card_or_serial,
-    "card": _res_card, "gc_card": _res_gc_card, "shared": _res_shared,
+    "gc_card": _res_gc_card, "shared": _res_shared,
+    # C()'s default group — never used by the CATALOG today, mapped to
+    # "shared" so a future collection that forgets `group=` can't crash scan()
+    "none": _res_shared,
     "rpcs3_save": _res_rpcs3_save, "rpcs3_trophy": _res_rpcs3_trophy,
     "rpcs3_state": _res_rpcs3_state,
     "psp_save": _res_psp_save, "psp_state": _res_psp_state,
@@ -783,8 +782,11 @@ _RESOLVERS = {
 
 # ── scan ──────────────────────────────────────────────────────────────────────
 
+_BAK_PART_RE = re.compile(r"\.bak-\d{8}-\d{6}")
+
+
 def _skip(rel: PurePosixPath) -> bool:
-    return any(p.startswith(".") or ".bak-" in p for p in rel.parts)
+    return any(p.startswith(".") or _BAK_PART_RE.search(p) for p in rel.parts)
 
 
 def _candidates(cdir: Path, col: dict):

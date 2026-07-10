@@ -53,11 +53,14 @@ def _first(*cands):
     return None
 
 
+_BAK_PART_RE = re.compile(r"\.bak-\d{8}-\d{6}")
+
+
 def _files(root: Path, arc_prefix: str = "") -> list:
     """(arcname, path) for every file under root, skipping addon backups."""
     out = []
     for f in sorted(root.rglob("*")):
-        if not f.is_file() or ".bak-" in f.name:
+        if not f.is_file() or _BAK_PART_RE.search(f.name):
             continue
         rel = f.relative_to(root).as_posix()
         out.append((f"{arc_prefix}/{rel}" if arc_prefix else rel, f))

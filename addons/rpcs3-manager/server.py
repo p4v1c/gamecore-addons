@@ -10,7 +10,6 @@ scalars ("16:9", "01.10") that a naive round-trip would corrupt.
 import asyncio
 import datetime
 import glob
-import logging
 import os
 import re
 import shutil
@@ -36,8 +35,6 @@ _SERIAL_RE = re.compile(r"^[A-Z0-9]{9}$")
 # The RPCS3 binary — overridable; defaults to the GameCore box layout.
 RPCS3_BIN = os.environ.get("RPCS3_BIN", str(GAMECORE_PATH / "lib" / "rpcs3"))
 
-log = logging.getLogger("rpcs3-manager")
-
 
 def config_dir() -> Path:
     """RPCS3 config dir — env override, then native, then flatpak."""
@@ -50,11 +47,25 @@ def config_dir() -> Path:
     return Path.home() / ".var/app/net.rpcs3.RPCS3/config/rpcs3"
 
 
+_KEEP_BACKUPS = 3
+
+
 def backup(path: Path) -> None:
-    """Timestamped .bak before touching an existing file (box convention)."""
-    if path.exists():
-        ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        shutil.copy2(path, path.with_name(f"{path.name}.bak-{ts}"))
+    """Timestamped .bak before touching an existing file (box convention).
+    Only the _KEEP_BACKUPS most recent per target are kept — patch.yml is
+    several MB and re-downloaded regularly; without pruning the .bak files
+    would grow without bound."""
+    if not path.exists():
+        return
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    shutil.copy2(path, path.with_name(f"{path.name}.bak-{ts}"))
+    prefix = f"{path.name}.bak-"
+    baks = sorted(p for p in path.parent.iterdir() if p.name.startswith(prefix))
+    for old in baks[:-_KEEP_BACKUPS]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
 
 
 def yload(path: Path):
@@ -233,10 +244,13 @@ def _fmt_value(value: str) -> str:
 def _edit_config_text(text: str, section: list[str], key: str, value: str) -> str:
     """Surgical line edit: change (or insert) one key inside a section
     without rewriting the rest of the file — keeps diffs minimal and the
-    exact RPCS3 formatting everywhere else."""
+    exact RPCS3 formatting everywhere else. A missing (sub)section is
+    created in place instead of failing: an old custom config may predate
+    e.g. the Video/Vulkan subsection."""
     lines = text.splitlines()
     stack: list[str] = []
-    section_end = None
+    # prefix_end[d] = index of the last line still inside section[:d]
+    prefix_end: dict[int, int] = {}
     for i, line in enumerate(lines):
         stripped = line.strip()
         if not stripped or stripped.startswith(("#", "- ", "[", "{")):
@@ -246,18 +260,24 @@ def _edit_config_text(text: str, section: list[str], key: str, value: str) -> st
         indent = (len(line) - len(line.lstrip(" "))) // 2
         name = stripped.split(":", 1)[0].strip().strip("\"'")
         stack = stack[:indent] + [name]
-        if stack[: len(section)] == section:
-            if stack == [*section, key] and indent == len(section):
-                pad = "  " * indent
-                lines[i] = f"{pad}{key}: {_fmt_value(value)}"
-                return "\n".join(lines) + "\n"
-            section_end = i
-        elif section_end is not None and indent < len(section):
-            break
-    if section_end is None:
-        raise HTTPException(500, f"section {'/'.join(section)} not found in config")
-    pad = "  " * len(section)
-    lines.insert(section_end + 1, f"{pad}{key}: {_fmt_value(value)}")
+        if stack == [*section, key] and indent == len(section):
+            pad = "  " * indent
+            lines[i] = f"{pad}{key}: {_fmt_value(value)}"
+            return "\n".join(lines) + "\n"
+        for d in range(1, len(section) + 1):
+            if stack[:d] == section[:d]:
+                prefix_end[d] = i
+    if len(section) in prefix_end:                    # section exists — insert
+        lines.insert(prefix_end[len(section)] + 1,
+                     f"{'  ' * len(section)}{key}: {_fmt_value(value)}")
+        return "\n".join(lines) + "\n"
+    # deepest existing parent (0 = none: append the whole block at the end,
+    # which is safe — that top-level mapping key doesn't exist anywhere yet)
+    depth = max((d for d in prefix_end), default=0)
+    block = [f"{'  ' * d}{section[d]}:" for d in range(depth, len(section))]
+    block.append(f"{'  ' * len(section)}{key}: {_fmt_value(value)}")
+    at = prefix_end[depth] + 1 if depth else len(lines)
+    lines[at:at] = block
     return "\n".join(lines) + "\n"
 
 
@@ -616,32 +636,38 @@ async def install_pkg(file: UploadFile = File(...)):
         raise HTTPException(503, f"RPCS3 binary not found at {RPCS3_BIN}")
     if _pkg_job["state"] == "running":
         raise HTTPException(409, "a .pkg install is already running")
-
-    disp = _discover_display()
-    if disp is None:
-        raise HTTPException(503, "no active screen on the box — a .pkg install needs "
-                                 "RPCS3's window; turn on the TV/box screen first")
-
-    staging = config_dir() / "pkg_staging"
-    staging.mkdir(parents=True, exist_ok=True)
-    dest = staging / re.sub(r"[^\w.\-]", "_", name)
-    with dest.open("wb") as out:
-        while chunk := await file.read(1 << 20):
-            out.write(chunk)
-
-    before = _hdd_snapshot()
-    try:
-        proc = subprocess.Popen(
-            [RPCS3_BIN, "--installpkg", str(dest)],
-            env={**os.environ, **disp},
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-    except Exception as e:
-        dest.unlink(missing_ok=True)
-        raise HTTPException(500, f"could not launch RPCS3: {e}")
-
+    # Claim the job BEFORE the first await — otherwise two concurrent uploads
+    # both pass the check above and spawn two RPCS3 instances.
     _pkg_job.update(state="running", file=name, installed=[], error="")
+
+    try:
+        disp = _discover_display()
+        if disp is None:
+            raise HTTPException(503, "no active screen on the box — a .pkg install needs "
+                                     "RPCS3's window; turn on the TV/box screen first")
+
+        staging = config_dir() / "pkg_staging"
+        staging.mkdir(parents=True, exist_ok=True)
+        dest = staging / re.sub(r"[^\w.\-]", "_", name)
+        with dest.open("wb") as out:
+            while chunk := await file.read(1 << 20):
+                out.write(chunk)
+
+        before = _hdd_snapshot()
+        try:
+            proc = subprocess.Popen(
+                [RPCS3_BIN, "--installpkg", str(dest)],
+                env={**os.environ, **disp},
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception as e:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(500, f"could not launch RPCS3: {e}")
+    except Exception:
+        _pkg_job.update(state="idle", file="", installed=[], error="")
+        raise
+
     asyncio.create_task(_finish_job(proc, dest, before))
     # Return immediately — the progress dialog shows on the box screen, the
     # frontend polls /api/pkg/status for the outcome.

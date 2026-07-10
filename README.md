@@ -45,6 +45,7 @@ site with sections — users never see ports.
 | [rom-manager](addons/rom-manager) | web | 8770 | Upload ROMs from the browser (drag & drop per system) |
 | [rpcs3-manager](addons/rpcs3-manager) | web | 8771 | Configure PS3 games remotely — per-game config & patches, RPCS3-style |
 | [save-manager](addons/save-manager) | web | 8772 | Back up / restore / delete emulator saves & save states (all systems) |
+| [local-coop](addons/local-coop) | web | 8773 | Automatic split-screen: launch a linked-instances game (DS/3DS/PSP) with 2+ pads → N players (gamescope + bubblewrap) |
 
 Ports 8770–8799 are reserved for addons; each addon declares its own in `addon.json`.
 

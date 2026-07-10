@@ -150,6 +150,10 @@ body.gc-nav-present #sidebar, body.gc-nav-present #main{height:calc(100vh - 44px
 let emulators = [], active = null, data = null, openKeys = new Set();
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+// For values injected inside single-quoted JS strings in inline handlers:
+// JS-escape backslashes and single quotes FIRST, then HTML-escape — otherwise
+// a name like "Assassin's Creed.sav" breaks the onclick (or injects JS).
+const attr = s => esc(String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
 function toast(m, err){const e=document.createElement('div');e.className='toast'+(err?' error':'');e.textContent=m;$('toasts').appendChild(e);setTimeout(()=>e.remove(),err?6000:3500)}
 async function jget(u){const r=await fetch(u);if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||r.status);return r.json()}
 
@@ -194,19 +198,19 @@ function fileHTML(e) {
   let actions;
   if (e.in_card) {
     // one save inside a memory card: export it or delete it individually
-    actions = `<button class="btn btn-dl" onclick="dlSave('${esc(e.id)}','${esc(e.save_key)}')" title="Export just this game's save (.mcs / .psu / .gci)">⬇ save</button>
-       <button class="btn btn-del" onclick="delSave('${esc(e.id)}','${esc(e.save_key)}','${esc(e.name)}')" title="Delete just this save from the card (the card is backed up first)">✕</button>`;
+    actions = `<button class="btn btn-dl" onclick="dlSave('${attr(e.id)}','${attr(e.save_key)}')" title="Export just this game's save (.mcs / .psu / .gci)">⬇ save</button>
+       <button class="btn btn-del" onclick="delSave('${attr(e.id)}','${attr(e.save_key)}','${attr(e.name)}')" title="Delete just this save from the card (the card is backed up first)">✕</button>`;
   } else if (e.card) {
     // whole-card download + inject one game's save into this card
     const ci = e.id.split('/')[0];
-    actions = `<button class="btn btn-dl" onclick="dl('${esc(e.id)}')" title="Download the whole card">⬇</button>
+    actions = `<button class="btn btn-dl" onclick="dl('${attr(e.id)}')" title="Download the whole card">⬇</button>
        <label class="btn btn-dl" title="Add one game's .mcs/.psu/.gci save into this card">➕ save
          <input type="file" accept=".mcs,.mcr,.psx,.psu,.gci" style="display:none"
-                onchange="inject(this.files[0], ${ci}, '${esc(e.name)}');this.value=''"></label>
-       <button class="btn btn-del" onclick="del('${esc(e.id)}','${esc(e.name)}')" title="Delete the whole card">✕</button>`;
+                onchange="inject(this.files[0], ${ci}, '${attr(e.name)}');this.value=''"></label>
+       <button class="btn btn-del" onclick="del('${attr(e.id)}','${attr(e.name)}')" title="Delete the whole card">✕</button>`;
   } else {
-    actions = `<button class="btn btn-dl" onclick="dl('${esc(e.id)}')">⬇</button>
-       <button class="btn btn-del" onclick="del('${esc(e.id)}','${esc(e.name)}')">✕</button>`;
+    actions = `<button class="btn btn-dl" onclick="dl('${attr(e.id)}')">⬇</button>
+       <button class="btn btn-del" onclick="del('${attr(e.id)}','${attr(e.name)}')">✕</button>`;
   }
   return `
     <div class="file ${e.kind === 'state' ? 'kind-state' : ''}">
@@ -226,13 +230,13 @@ function gameHTML(g) {
     : `<div class="game-cover ph">🎮</div>`;
   return `
     <div class="game ${open ? 'open' : ''}">
-      <div class="game-head" onclick="toggle('${esc(g.key)}')">
+      <div class="game-head" onclick="toggle('${attr(g.key)}')">
         ${cover}
         <div class="game-info">
           <div class="game-name" title="${esc(g.title)}">${esc(g.title)}</div>
           <div class="game-sub">${g.saves} save${g.saves!==1?'s':''}${g.states?` · ${g.states} state${g.states!==1?'s':''}`:''} · ${g.sizeHuman}</div>
         </div>
-        <button class="btn btn-dl" onclick="event.stopPropagation();dlGame('${esc(g.key)}')"
+        <button class="btn btn-dl" onclick="event.stopPropagation();dlGame('${attr(g.key)}')"
                 title="Download everything for this game as one zip (restorable on any box via 'Restore full backup')">⬇ all</button>
         <div class="chev">›</div>
       </div>
@@ -294,9 +298,9 @@ function bakHTML(b) {
         <div class="f-meta">${meta}</div>
       </div>
       <div class="f-actions">
-        <button class="btn btn-dl" onclick="restoreBak('${esc(b.id)}','${esc(b.name)}','${esc(b.when)}')"
+        <button class="btn btn-dl" onclick="restoreBak('${attr(b.id)}','${attr(b.name)}','${attr(b.when)}')"
                 title="Put this backup back in place (the current version is backed up first)">↩ Restore</button>
-        <button class="btn btn-del" onclick="delBak('${esc(b.id)}','${esc(b.name)}')"
+        <button class="btn btn-del" onclick="delBak('${attr(b.id)}','${attr(b.name)}')"
                 title="Delete this backup">✕</button>
       </div>
     </div>`;

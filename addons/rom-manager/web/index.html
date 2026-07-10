@@ -508,7 +508,10 @@ document.addEventListener('drop', e => {
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-function escAttr(s) { return String(s).replace(/'/g,"\\'"); }
+// For values inside single-quoted JS strings in inline handlers: JS-escape
+// backslashes + single quotes first, THEN HTML-escape (so a ROM name with
+// a double quote can't terminate the onclick attribute either).
+function escAttr(s) { return escHtml(String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")); }
 
 // ── Overlay modal ──────────────────────────────────────────────────────────────
 function openOverlayModal() {

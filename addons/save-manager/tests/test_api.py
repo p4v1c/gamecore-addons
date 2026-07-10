@@ -192,7 +192,7 @@ def test_duckstation_card():
     # put it back for the later tests
     r = client.post("/api/saves/duckstation/upload",
                     params={"collection": 0, "card": "Test Game (Europe).mcd"},
-                    files={"file": ("t.mcs", io.BytesIO(r.content) if False else io.BytesIO(cards.make_mcs()))})
+                    files={"file": ("t.mcs", io.BytesIO(cards.make_mcs()))})
     check("in-card re-inject", r.status_code == 200, r.text)
 
 
@@ -361,6 +361,27 @@ def test_shadps4():
     check("new game restored", r2.status_code == 200 and dest.read_bytes() == b"new game", r2.text)
 
 
+def test_card_game_zip():
+    print("Card-game zip round-trips")
+    # A game living INSIDE the shared PCSX2 card: its "⬇ all" zip must use
+    # base-relative paths (memcards/…) and restore through upload-full.
+    r = client.get("/api/games/pcsx2/download", params={"key": "SLES-99999"})
+    check("card-only game zip", r.status_code == 200)
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    check("card path is base-relative", names == ["memcards/Mcd001.ps2"], str(names))
+    r2 = client.post("/api/saves/pcsx2/upload-full",
+                     files={"file": ("card.zip", io.BytesIO(r.content))})
+    check("card-only game zip restorable", r2.status_code == 200, r2.text)
+
+    # A game with a savestate AND a card attributed at the server layer:
+    # the zip must bundle BOTH (the card used to be silently dropped).
+    r = client.get("/api/games/duckstation/download", params={"key": "SLES-12345"})
+    names = sorted(zipfile.ZipFile(io.BytesIO(r.content)).namelist())
+    check("state + card bundled",
+          any(n.startswith("savestates/") for n in names) and
+          any(n.startswith("memcards/") for n in names), str(names))
+
+
 def test_backups_section():
     import time
     print("Backups section")
@@ -432,6 +453,7 @@ if __name__ == "__main__":
     test_xenia()
     test_shadps4()
     test_zip_roundtrip()
+    test_card_game_zip()
     test_backups_section()
     test_backup_pruning()
     print()

@@ -199,6 +199,10 @@ def _ps1_import(data: bytes, blob: bytes) -> bytes:
     nblocks = len(body) // _PS1_BLOCK
     name = _ps1_name(header)
     serial = _serial(name)
+    if not serial:
+        # the card listing (and the post-write verification below) is keyed by
+        # Sony serial — a save whose on-card name has none can't be managed
+        raise ValueError("That .mcs has no game serial in its save name — unsupported.")
 
     out = bytearray(data)
     card = memoryview(out)[off:off + _PS1_LEN]
@@ -663,7 +667,7 @@ def _gc_export(data, key):
         if name == key or code.upper() == key:
             blocks = _gc_chain(data, bat, first, count)
             body = b"".join(data[b * _GC_BLOCK:(b + 1) * _GC_BLOCK] for b in blocks)
-            fn = re.sub(r"[^A-Za-z0-9._-]", "_", f"{code}_{name}" or key)
+            fn = re.sub(r"[^A-Za-z0-9._-]", "_", f"{code}_{name}".strip("_") or key)
             return f"{fn}.gci", bytes(e) + body
     raise KeyError(key)
 
@@ -676,6 +680,8 @@ def _gc_import(data, blob):
     count = len(body) // _GC_BLOCK
     up_code = ent[0:4].decode("ascii", "ignore")
     up_name = ent[0x08:0x08 + 0x20].split(b"\x00", 1)[0].decode("ascii", "ignore")
+    if not up_code.strip():
+        raise ValueError("That .gci file is malformed (no game code).")
 
     out = bytearray(data)
     total = len(out) // _GC_BLOCK
@@ -718,7 +724,10 @@ def _gc_import(data, blob):
     _gc_write_dir(out, d, dnew)
     _gc_write_bat(out, bat, bnew)
 
-    if not any(s["name"] == up_name for s in read_saves(bytes(out))):
+    # read_saves lists a GC save under its internal name, or its raw code when
+    # the name is empty (_gc_saves: "name": name or code) — verify with the
+    # exact same key, no case change
+    if not any(s["name"] == (up_name or up_code[:4]) for s in read_saves(bytes(out))):
         raise ValueError("Could not place the save on the card (nothing was written).")
     return bytes(out)
 

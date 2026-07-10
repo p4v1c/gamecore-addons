@@ -15,7 +15,6 @@ Beyond single entries:
     export tool served under /tools/ that packs a PC's saves for this API.
 """
 import io
-import logging
 import os
 import re
 import shutil
@@ -40,7 +39,6 @@ from guide import GUIDE
 
 ADDON_DIR = Path(__file__).parent
 PORT = int(os.environ.get("ADDON_PORT", 8772))
-log = logging.getLogger("save-manager")
 
 app = FastAPI(title="GameCore addon — Save Manager")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -141,7 +139,7 @@ def _collection_dir(emu_id: str, ci: int) -> tuple[Path, dict]:
     if not base:
         raise HTTPException(404, "no data directory for this emulator on the box")
     cols = _emu(emu_id)["collections"]
-    if ci >= len(cols):
+    if not 0 <= ci < len(cols):
         raise HTTPException(400, "bad collection")
     col = cols[ci]
     return (base / col["subpath"]) if col["subpath"] else base, col
@@ -344,13 +342,9 @@ def download(emu_id: str, id: str, save: str | None = None):
     if target.is_dir():
         # zip paths are relative to the collection dir, so re-uploading the
         # zip restores nested games (Wii <hi>/<lo>, Switch <user>/<tid>…)
-        # at their exact place
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-            for f in target.rglob("*"):
-                if f.is_file():
-                    z.write(f, f.relative_to(cdir))
-        buf.seek(0)
+        # at their exact place. _zip_entries spools to disk past 64 MiB so a
+        # huge save-state folder can't eat the box's RAM.
+        buf = _zip_entries([(target, target.relative_to(cdir).as_posix())])
         return StreamingResponse(buf, media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="{target.name}.zip"'})
     return FileResponse(str(target), filename=target.name)
@@ -370,7 +364,16 @@ async def upload(emu_id: str, collection: int, file: UploadFile = File(...),
         # Inject one game's save (.mcs/.psu) into a specific shared card. The
         # whole card is backed up first; memcard.import_save builds a copy and
         # verifies the save reads back before we ever overwrite the original.
-        card_path = cdir / Path(card).name
+        # `card` is the collection-relative path (cards mode scans recursively,
+        # so a card may live in a subfolder) — validated like every entry path.
+        rel = PurePosixPath(card)
+        if rel.is_absolute() or ".." in rel.parts or not rel.parts:
+            raise HTTPException(403, "path outside the save directory")
+        card_path = cdir.joinpath(*rel.parts)
+        try:
+            card_path.resolve().relative_to(cdir.resolve())
+        except ValueError:
+            raise HTTPException(403, "path outside the save directory")
         if not card_path.is_file():
             raise HTTPException(404, "card not found")
         try:
@@ -454,9 +457,14 @@ def delete(emu_id: str, id: str, save: str | None = None):
     return {"ok": True}
 
 
+_BAK_PART_RE = re.compile(r"\.bak-\d{8}-\d{6}")
+
+
 def _zip_entries(items: list[tuple[Path, str]]):
-    """Zip (path, arcname base) pairs. Backups are never bundled. Spools to a
-    temp file past 64 MiB so a full RPCS3 tree can't eat the box's RAM."""
+    """Zip (path, arcname base) pairs. Backups are never bundled (matched on
+    the full `.bak-<timestamp>` suffix, not a raw substring, so a game file
+    that merely contains '.bak-' in its name is kept). Spools to a temp file
+    past 64 MiB so a full RPCS3 tree can't eat the box's RAM."""
     buf = tempfile.SpooledTemporaryFile(max_size=64 * 1024 * 1024)
     seen = set()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
@@ -465,7 +473,7 @@ def _zip_entries(items: list[tuple[Path, str]]):
                       for f in sorted(root.rglob("*")) if f.is_file()]
                      if root.is_dir() else [(root, arc)])
             for f, name in pairs:
-                if name in seen or ".bak-" in name:
+                if name in seen or _BAK_PART_RE.search(name):
                     continue
                 seen.add(name)
                 z.write(f, name)
@@ -514,21 +522,24 @@ def download_game(emu_id: str, key: str):
     if not base:
         raise HTTPException(404, "no data directory for this emulator on the box")
     picks = [e for e in raw if e["key"] == key]
-    if picks:
-        items = _arc_items(emu_id, base, _emu(emu_id)["collections"], picks)
-    else:
-        # A game that lives entirely inside a shared card is attributed at the
-        # server layer (not by scan), so bundle the card(s) that hold it.
-        seen, items = set(), []
-        for e in _entries(emu_id):
-            if e["game_key"] != key or e["id"] in seen:
-                continue
-            seen.add(e["id"])
-            target, _cdir, _col = _resolve_entry(emu_id, e["id"])
-            if target.exists():
-                items.append((target, target.name))
-        if not items:
-            raise HTTPException(404, "unknown game")
+    items = _arc_items(emu_id, base, _emu(emu_id)["collections"], picks) if picks else []
+    # A game may (also) live inside a shared memory card — that attribution
+    # happens at the server layer (_entries), not in scan, so scan-level picks
+    # alone would miss the card (or, for card-only games, find nothing at all).
+    # Bundle every card holding this game, under its base-relative path so
+    # /upload-full accepts the zip. _zip_entries dedups repeated arc names.
+    seen = set()
+    for e in _entries(emu_id):
+        if e["game_key"] != key or e["id"] in seen:
+            continue
+        if not (e["card"] or e.get("in_card")):
+            continue                     # plain entries are covered by `picks`
+        seen.add(e["id"])
+        target, _cdir, _col = _resolve_entry(emu_id, e["id"])
+        if target.exists():
+            items.append((target, target.relative_to(base).as_posix()))
+    if not items:
+        raise HTTPException(404, "unknown game")
     stem = re.sub(r"[^A-Za-z0-9._ -]+", "_", key).strip() or "game"
     return StreamingResponse(_zip_entries(items), media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{emu_id}-{stem}.zip"'})
@@ -754,9 +765,14 @@ async def upload_full(emu_id: str, file: UploadFile = File(...)):
     base = resolve_base(emu_id)
     if not base:
         raise HTTPException(404, "no data directory for this emulator on the box")
-    data = await file.read()
+    # Spool the upload to disk past 64 MiB — a full RPCS3 backup can be huge
+    # and must not be held in RAM on the box.
+    buf = tempfile.SpooledTemporaryFile(max_size=64 * 1024 * 1024)
+    while chunk := await file.read(1 << 20):
+        buf.write(chunk)
+    buf.seek(0)
     try:
-        zf = zipfile.ZipFile(io.BytesIO(data))
+        zf = zipfile.ZipFile(buf)
     except zipfile.BadZipFile:
         raise HTTPException(400, "invalid zip")
     members = [m for m in zf.infolist() if not m.is_dir()]

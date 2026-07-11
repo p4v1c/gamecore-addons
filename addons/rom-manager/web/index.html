@@ -179,7 +179,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
     </button>
     <button class="btn btn-primary" id="btn-add" onclick="triggerFileInput()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-      Add ROMs
+      <span id="btn-add-label">Add ROMs</span>
     </button>
     <input type="file" id="file-input" multiple style="display:none" onchange="handleFileInput(this)">
   </div>
@@ -315,9 +315,15 @@ async function selectEmulator(id) {
   document.getElementById('btn-overlay').style.display = '';
   document.getElementById('top-badge').textContent = activeEmu.platform;
   document.getElementById('top-title').textContent = `${activeEmu.platform} Library`;
-  const extList = (activeEmu.extensions || []).join('  ');
+  // Folder-based systems (PS3 disc games…) upload whole game folders: the
+  // browse picker switches to directory mode and the hints say "folder".
+  const fileInput = document.getElementById('file-input');
+  fileInput.webkitdirectory = !!activeEmu.scanDirs;
+  document.getElementById('btn-add-label').textContent =
+    activeEmu.scanDirs ? 'Add game folder' : 'Add ROMs';
+  const extList = activeEmu.scanDirs ? 'game folders' : (activeEmu.extensions || []).join('  ');
   document.getElementById('drag-sub-text').innerHTML =
-    `Drop files for <strong>${activeEmu.platform}</strong><br>
+    `Drop ${activeEmu.scanDirs ? 'a game folder' : 'files'} for <strong>${activeEmu.platform}</strong><br>
      <span style="font-size:12px;opacity:.7">${escHtml(extList)}</span>`;
 
   await loadRoms(id);
@@ -373,7 +379,8 @@ function gameCardHTML(emuId, rom) {
 }
 
 function dropZoneHTML() {
-  const exts = activeEmu ? (activeEmu.extensions || []).join('  ') : '';
+  const dirs = !!(activeEmu && activeEmu.scanDirs);
+  const exts = dirs ? 'game folders' : (activeEmu ? (activeEmu.extensions || []).join('  ') : '');
   return `
     <label class="drop-zone" id="drop-zone-inner"
            ondragover="dzOver(event,this)" ondragleave="dzLeave(this)" ondrop="dzDrop(event)">
@@ -382,10 +389,10 @@ function dropZoneHTML() {
         <polyline points="17 8 12 3 7 8"/>
         <line x1="12" y1="3" x2="12" y2="15"/>
       </svg>
-      <span style="font-size:13px;font-weight:600">Drag &amp; drop ROMs here</span>
-      <span style="font-size:12px;color:var(--text2)">or click to browse files</span>
+      <span style="font-size:13px;font-weight:600">Drag &amp; drop ${dirs ? 'a game folder' : 'ROMs'} here</span>
+      <span style="font-size:12px;color:var(--text2)">or click to browse ${dirs ? 'for a folder' : 'files'}</span>
       ${exts ? `<span style="font-size:11px;color:var(--text2);letter-spacing:.3px">${escHtml(exts)}</span>` : ''}
-      <input type="file" multiple onchange="handleFileInput(this)">
+      <input type="file" multiple ${dirs ? 'webkitdirectory' : ''} onchange="handleFileInput(this)">
     </label>
   `;
 }
@@ -421,7 +428,29 @@ function handleFileInput(input) {
 
 function uploadFiles(files) {
   if (!activeEmu || !files.length) return;
+  if (activeEmu.scanDirs) {
+    // Folder-based system: files must come from the directory picker, which
+    // stamps webkitRelativePath ("Game/PS3_GAME/…"). Group them per game.
+    const entries = files.filter(f => f.webkitRelativePath)
+                         .map(f => ({ file: f, relpath: f.webkitRelativePath }));
+    if (!entries.length) {
+      alert(`${activeEmu.platform} games are folders — drop the whole game folder here.`);
+      return;
+    }
+    for (const [game, batch] of groupByTopDir(entries)) uploadFolder(game, batch, activeEmu.id);
+    return;
+  }
   files.forEach(f => uploadOne(f, activeEmu.id));
+}
+
+function groupByTopDir(entries) {
+  const games = new Map();
+  for (const e of entries) {
+    const top = e.relpath.split('/')[0];
+    if (!games.has(top)) games.set(top, []);
+    games.get(top).push(e);
+  }
+  return games;
 }
 
 function uploadOne(file, emuId) {
@@ -481,7 +510,126 @@ function dzLeave(el) { el.classList.remove('hover'); }
 function dzDrop(e) {
   e.preventDefault();
   document.getElementById('drop-zone-inner')?.classList.remove('hover');
-  uploadFiles(Array.from(e.dataTransfer.files));
+  handleDrop(e);
+}
+
+// ── Folder drops (PS3-style disc games) ───────────────────────────────────────
+// webkitGetAsEntry() only works synchronously inside the drop event, so the
+// entries are grabbed here and traversed asynchronously afterwards.
+function handleDrop(e) {
+  if (!activeEmu) { alert('Select an emulator first.'); return; }
+  if (!activeEmu.scanDirs) {
+    uploadFiles(Array.from(e.dataTransfer.files));
+    return;
+  }
+  const entries = Array.from(e.dataTransfer.items || [])
+    .map(i => i.webkitGetAsEntry && i.webkitGetAsEntry())
+    .filter(Boolean);
+  const dirs = entries.filter(en => en.isDirectory);
+  if (!dirs.length) {
+    alert(`${activeEmu.platform} games are folders — drop the whole game folder here.`);
+    return;
+  }
+  dirs.forEach(dir => uploadDroppedDir(dir, activeEmu.id));
+}
+
+async function uploadDroppedDir(dirEntry, emuId) {
+  const collected = [];
+  try {
+    await collectDirEntry(dirEntry, dirEntry.name, collected);
+  } catch (err) {
+    alert(`Could not read "${dirEntry.name}": ${err.message || err}`);
+    return;
+  }
+  if (!collected.length) { alert(`"${dirEntry.name}" is empty.`); return; }
+  uploadFolder(dirEntry.name, collected, emuId);
+}
+
+function readAllEntries(reader) {
+  // readEntries returns at most ~100 entries per call — drain it.
+  return new Promise((resolve, reject) => {
+    const all = [];
+    (function next() {
+      reader.readEntries(batch => {
+        if (!batch.length) return resolve(all);
+        all.push(...batch);
+        next();
+      }, reject);
+    })();
+  });
+}
+
+async function collectDirEntry(entry, path, out) {
+  if (entry.isFile) {
+    const file = await new Promise((res, rej) => entry.file(res, rej));
+    out.push({ file, relpath: path });
+  } else if (entry.isDirectory) {
+    const children = await readAllEntries(entry.createReader());
+    for (const c of children) await collectDirEntry(c, path + '/' + c.name, out);
+  }
+}
+
+// One toast per game folder, aggregated progress across all its files.
+async function uploadFolder(gameName, entries, emuId) {
+  const toastId = `toast-${Date.now()}-${Math.random()}`;
+  const toastEl = document.createElement('div');
+  toastEl.className = 'toast';
+  toastEl.innerHTML = `
+    <div class="toast-row">
+      <span class="toast-name" title="${escHtml(gameName)}">📁 ${escHtml(gameName)}</span>
+      <span class="toast-state" id="${toastId}-state">0%</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="${toastId}-fill" style="width:0"></div></div>
+  `;
+  document.getElementById('toasts').appendChild(toastEl);
+  const stateEl = document.getElementById(`${toastId}-state`);
+  const fillEl  = document.getElementById(`${toastId}-fill`);
+
+  const total = entries.reduce((s, x) => s + x.file.size, 0);
+  let doneBytes = 0;
+  for (let i = 0; i < entries.length; i++) {
+    const { file, relpath } = entries[i];
+    try {
+      await uploadEntry(file, relpath, emuId, i === entries.length - 1, loaded => {
+        const pct = total ? Math.min(100, Math.round((doneBytes + loaded) / total * 100)) : 0;
+        fillEl.style.width = pct + '%';
+        stateEl.textContent = `${pct}% · ${i + 1}/${entries.length} files`;
+      });
+    } catch (err) {
+      stateEl.textContent = `Failed: ${String(err).slice(0, 60)}`;
+      stateEl.style.color = 'var(--danger)';
+      fillEl.style.background = 'var(--danger)';
+      setTimeout(() => toastEl.remove(), 8000);
+      return;
+    }
+    doneBytes += file.size;
+  }
+  stateEl.textContent = 'Done';
+  stateEl.style.color = 'var(--success)';
+  fillEl.style.width = '100%';
+  fillEl.style.background = 'var(--success)';
+  if (activeEmu && activeEmu.id === emuId) loadRoms(emuId);
+  setTimeout(() => toastEl.remove(), 3000);
+}
+
+function uploadEntry(file, relpath, emuId, isLast, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const form = new FormData();
+    form.append('file', file);
+    form.append('relpath', relpath);
+    form.append('last', isLast ? '1' : '0');
+    xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded); };
+    xhr.onload = () => {
+      if (xhr.status === 200) return resolve();
+      let msg = `HTTP ${xhr.status}`;
+      try { msg = JSON.parse(xhr.responseText).detail || msg; } catch {}
+      reject(new Error(msg));
+    };
+    xhr.onerror = () => reject(new Error('network error'));
+    xhr.open('POST', `/api/roms/${emuId}/upload-entry`);
+    xhr.send(form);
+  });
 }
 
 document.addEventListener('dragenter', e => {
@@ -498,11 +646,10 @@ document.addEventListener('drop', e => {
   e.preventDefault();
   dragDepth = 0;
   document.getElementById('drag-overlay').classList.remove('visible');
-  const files = Array.from(e.dataTransfer.files);
-  if (files.length) {
-    if (!activeEmu) { alert('Select an emulator first.'); return; }
-    uploadFiles(files);
-  }
+  const hasFiles = e.dataTransfer.files.length ||
+    Array.from(e.dataTransfer.items || []).some(i => i.kind === 'file');
+  if (!hasFiles) return;
+  handleDrop(e);
 });
 
 function escHtml(s) {

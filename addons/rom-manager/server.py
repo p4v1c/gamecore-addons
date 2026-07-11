@@ -10,12 +10,13 @@ import fnmatch
 import json
 import logging
 import os
+import re
 import shutil
 from pathlib import Path
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -142,6 +143,7 @@ def list_emulators():
             "color":      s.get("color", "#5c7cfa"),
             "type":       "emulator",
             "extensions": extensions,
+            "scanDirs":   scan_dirs,
             "romCount":   rom_count,
             "totalSize":  fmt_size(total_size) if total_size else None,
         })
@@ -171,8 +173,8 @@ async def upload_rom(system_id: str, file: UploadFile = File(...)):
     system = get_system(system_id)
     if system.get("scanDirs"):
         raise HTTPException(400, "This system stores games as folders (disc games). "
-                                 "Copy them via SSH/USB, or install a game .pkg from the "
-                                 "RPCS3 manager — single-file upload does not apply here.")
+                                 "Drop the whole game folder instead — single-file "
+                                 "upload does not apply here.")
     roms_path = roms_path_of(system)
     if not roms_path:
         raise HTTPException(400, "No ROM path configured")
@@ -199,6 +201,49 @@ async def upload_rom(system_id: str, file: UploadFile = File(...)):
 
     await notify_core("rom_uploaded", {"system_id": system_id, "filename": filename})
     return {"name": filename, "size": size, "sizeHuman": fmt_size(size)}
+
+
+def safe_relpath(relpath: str) -> list[str]:
+    """Sanitize a client-supplied path inside a game folder into safe
+    components. Rejects traversal; needs at least <game folder>/<file>."""
+    parts = [p for p in re.split(r"[/\\]+", relpath) if p not in ("", ".", "..")]
+    parts = [safe_filename(p) for p in parts]
+    if len(parts) < 2:
+        raise HTTPException(400, "relpath must be <game folder>/…/<file>")
+    return parts
+
+
+@app.post("/api/roms/{system_id}/upload-entry")
+async def upload_folder_entry(system_id: str, file: UploadFile = File(...),
+                              relpath: str = Form(...), last: str = Form("0")):
+    """One file of a disc-game folder (PS3…), at its relative path inside the
+    game. The frontend traverses the dropped folder and posts every file here,
+    flagging the final one with last=1 so the core is notified once."""
+    system = get_system(system_id)
+    if not system.get("scanDirs"):
+        raise HTTPException(400, "This system takes single-file ROMs — use the regular upload")
+    roms_path = roms_path_of(system)
+    if not roms_path:
+        raise HTTPException(400, "No ROM path configured")
+
+    parts = safe_relpath(relpath)
+    dest = roms_path.joinpath(*parts)
+    roms_path.mkdir(parents=True, exist_ok=True)
+    try:
+        dest.resolve().relative_to(roms_path.resolve())
+    except ValueError:
+        raise HTTPException(403, "path escapes the ROMs directory")
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    size = 0
+    with dest.open("wb") as out:
+        while chunk := await file.read(1 << 20):
+            out.write(chunk)
+            size += len(chunk)
+
+    if last == "1":
+        await notify_core("rom_uploaded", {"system_id": system_id, "filename": parts[0]})
+    return {"name": "/".join(parts), "size": size, "sizeHuman": fmt_size(size)}
 
 
 @app.delete("/api/roms/{system_id}/{filename}")

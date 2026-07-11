@@ -370,7 +370,7 @@ function gameCardHTML(emuId, rom) {
         <span class="card-ext">${rom.ext}</span>
       </div>
       <div class="card-body">
-        <div class="card-name">${escHtml(rom.name)}</div>
+        <div class="card-name" title="${escHtml(rom.name)}">${escHtml(rom.displayName || rom.name)}</div>
         <div class="card-size">${rom.sizeHuman}</div>
       </div>
       <button class="card-del" title="Delete" onclick="deleteRom('${emuId}','${escAttr(rom.name)}',this)">×</button>

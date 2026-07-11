@@ -43,6 +43,15 @@ def fmt_size(n: float) -> str:
     return f"{n:.1f} TB"
 
 
+TAG_RE = re.compile(r"[\(\[].*?[\)\]]")  # same rule as the core's backend/utils.py
+
+
+def clean_name(filename: str) -> str:
+    """Strip extension and bracketed tags (e.g. '[!]', '(Europe)') for display —
+    mirrors the core's rom_scanner.clean_name so both UIs show the same title."""
+    return " ".join(TAG_RE.sub("", Path(filename).stem).split()) or filename
+
+
 def matches_ext(filename: str, extensions: list[str]) -> bool:
     name = filename.lower()
     return any(fnmatch.fnmatch(name, p.lower()) for p in extensions)
@@ -160,10 +169,11 @@ def list_roms(system_id: str):
     for f in iter_rom_files(roms_path, system.get("extensions", []), system.get("scanDirs", False)):
         size = entry_size(f)
         files.append({
-            "name":      f.name,
-            "size":      size,
-            "sizeHuman": fmt_size(size),
-            "ext":       "DISC" if f.is_dir() else f.suffix.lstrip(".").upper(),
+            "name":        f.name,
+            "displayName": clean_name(f.name),
+            "size":        size,
+            "sizeHuman":   fmt_size(size),
+            "ext":         "DISC" if f.is_dir() else f.suffix.lstrip(".").upper(),
         })
     return files
 

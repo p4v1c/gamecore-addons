@@ -28,7 +28,6 @@ from urllib.parse import quote
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -41,7 +40,6 @@ ADDON_DIR = Path(__file__).parent
 PORT = int(os.environ.get("ADDON_PORT", 8772))
 
 app = FastAPI(title="GameCore addon — Save Manager")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 def fmt_size(n: float) -> str:
@@ -830,4 +828,4 @@ app.mount("/tools", StaticFiles(directory=str(ADDON_DIR / "tools")), name="tools
 app.mount("/", StaticFiles(directory=str(ADDON_DIR / "web"), html=True), name="web")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    uvicorn.run(app, host="127.0.0.1", port=PORT)

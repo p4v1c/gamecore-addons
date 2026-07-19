@@ -17,7 +17,6 @@ from pathlib import Path
 import httpx
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 ADDON_DIR = Path(__file__).parent
@@ -30,7 +29,6 @@ CORE_NOTIFY = f"http://127.0.0.1:{CORE_PORT}/api/addons/notify"
 log = logging.getLogger("rom-manager")
 
 app = FastAPI(title="GameCore addon — ROM Manager")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 # ── helpers (mirrored from the core so the addon stays self-contained) ────────
@@ -284,4 +282,4 @@ async def delete_rom(system_id: str, filename: str):
 app.mount("/", StaticFiles(directory=str(ADDON_DIR / "web"), html=True), name="web")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    uvicorn.run(app, host="127.0.0.1", port=PORT)

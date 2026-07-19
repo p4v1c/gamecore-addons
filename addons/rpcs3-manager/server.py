@@ -19,7 +19,6 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -78,7 +77,6 @@ def yload(path: Path):
 
 
 app = FastAPI(title="GameCore addon — RPCS3 Manager")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 @app.get("/api/health")
@@ -684,4 +682,4 @@ async def _finish_job(proc, dest, before):
 app.mount("/", StaticFiles(directory=str(ADDON_DIR / "web"), html=True), name="web")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    uvicorn.run(app, host="127.0.0.1", port=PORT)

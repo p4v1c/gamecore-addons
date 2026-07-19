@@ -7,10 +7,16 @@ upload-ready zip per emulator, and can push them straight to the box:
 
     python gamecore-save-export.py                          # what was found
     python gamecore-save-export.py --pack -o out/           # write the zips
-    python gamecore-save-export.py --push http://BOX:8772   # pack + upload
-    python gamecore-save-export.py --emu pcsx2 dolphin --push http://BOX:8772
-    python gamecore-save-export.py --path xenia="D:\\xenia" --push http://BOX:8772
+    python gamecore-save-export.py --push https://BOX:8443/saves --password …
+    python gamecore-save-export.py --emu pcsx2 dolphin --push https://BOX:8443/saves
+    python gamecore-save-export.py --path xenia="D:\\xenia" --push https://BOX:8443/saves
     python gamecore-save-export.py --n64-rom Zelda.z64 --n64-save old.sra
+
+The box sits behind an HTTPS proxy with a shared login: pass the web
+password with --password (or env GC_PASSWORD — https pushes prompt if
+absent). Its certificate authority is self-hosted: download it once from
+https://BOX:8443/gc/ca.crt and pass --ca gamecore-ca.crt (or --insecure).
+Direct loopback pushes (http://127.0.0.1:8772, on the box) need neither.
 
 Zips use the exact layout the Save Manager restores ("full backup" zone /
 POST /api/saves/<emu>/upload-full):
@@ -23,11 +29,13 @@ POST /api/saves/<emu>/upload-full):
 Python 3.8+, standard library only. Nothing on the PC is modified.
 """
 import argparse
+import getpass
 import hashlib
 import io
 import json
 import os
 import re
+import ssl
 import struct
 import sys
 import urllib.error
@@ -35,6 +43,7 @@ import urllib.request
 import uuid
 import zipfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -379,25 +388,70 @@ def build_zip(items) -> bytes:
     return buf.getvalue()
 
 
-def push(box: str, emu: str, blob: bytes) -> str:
+_TLS_HINT = ("TLS verification failed — download the box CA once from "
+             "https://BOX:8443/gc/ca.crt and pass --ca gamecore-ca.crt "
+             "(or use --insecure)")
+
+
+def make_ctx(args) -> ssl.SSLContext:
+    if args.insecure:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    return ssl.create_default_context(cafile=args.ca)
+
+
+def _is_tls_error(e: Exception) -> bool:
+    return isinstance(getattr(e, "reason", None), ssl.SSLError) \
+        or "CERTIFICATE_VERIFY" in str(e).upper()
+
+
+def login(box: str, password: str, ctx) -> str:
+    """POST /api/auth/login at the box ORIGIN (the auth API lives at the
+    root, not under the /saves prefix) — returns the session cookie."""
+    parts = urlsplit(box if "//" in box else "//" + box)
+    origin = f"{parts.scheme or 'http'}://{parts.netloc}"
+    req = urllib.request.Request(
+        origin + "/api/auth/login",
+        data=json.dumps({"password": password}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+            for header, value in r.headers.items():
+                if header.lower() == "set-cookie" and value.startswith("gc_session="):
+                    return value.split(";", 1)[0]
+    except urllib.error.HTTPError as e:
+        raise SystemExit("login refused — wrong password?" if e.code == 401
+                         else f"login failed — HTTP {e.code}")
+    except OSError as e:
+        raise SystemExit(_TLS_HINT if _is_tls_error(e) else f"login failed — {e}")
+    raise SystemExit("login failed — no session cookie in the reply")
+
+
+def push(box: str, emu: str, blob: bytes, ctx=None, cookie=None) -> str:
     url = f"{box.rstrip('/')}/api/saves/{emu}/upload-full"
     boundary = uuid.uuid4().hex
     body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
             f"filename=\"{emu}-saves.zip\"\r\nContent-Type: application/zip\r\n\r\n"
             ).encode() + blob + f"\r\n--{boundary}--\r\n".encode()
-    req = urllib.request.Request(url, data=body, method="POST", headers={
-        "Content-Type": f"multipart/form-data; boundary={boundary}"})
+    headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+    if cookie:
+        headers["Cookie"] = cookie
+    req = urllib.request.Request(url, data=body, method="POST", headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=300) as r:
+        with urllib.request.urlopen(req, timeout=300, context=ctx) as r:
             restored = json.loads(r.read()).get("restored", [])
             return f"restored: {', '.join(map(str, restored)) or 'ok'}"
     except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return "REFUSED — login required (pass --password / GC_PASSWORD)"
         try:
             return f"REFUSED — {json.loads(e.read()).get('detail', e)}"
         except Exception:
             return f"FAILED — HTTP {e.code}"
     except OSError as e:
-        return f"FAILED — {e}"
+        return f"FAILED — {_TLS_HINT if _is_tls_error(e) else e}"
 
 
 def human(n: int) -> str:
@@ -417,7 +471,12 @@ def main():
                     help="override/provide a location (repeatable)")
     ap.add_argument("--pack", action="store_true", help="write one zip per emulator")
     ap.add_argument("-o", "--out", default="gamecore-saves", help="output dir for --pack")
-    ap.add_argument("--push", metavar="URL", help="upload to the box, e.g. http://192.168.1.50:8772")
+    ap.add_argument("--push", metavar="URL", help="upload to the box, e.g. https://192.168.1.50:8443/saves")
+    ap.add_argument("--password", metavar="PW",
+                    help="box web password (or env GC_PASSWORD); https pushes prompt if absent")
+    ap.add_argument("--ca", metavar="FILE",
+                    help="the box CA certificate (download it from https://BOX:8443/gc/ca.crt)")
+    ap.add_argument("--insecure", action="store_true", help="skip TLS verification (not recommended)")
     ap.add_argument("--n64-rom", metavar="ROM", help="convert a foreign N64 save: the matching ROM")
     ap.add_argument("--n64-save", metavar="SAVE", help="…and the .eep/.sra/.fla/.mpk to convert")
     args = ap.parse_args()
@@ -458,8 +517,17 @@ def main():
         print("\nNo saves found. Use --path EMU=DIR to point at custom locations.")
         return
     if not (args.pack or args.push):
-        print("\nNext: add --pack to write zips, or --push http://<box-ip>:8772 to upload.")
+        print("\nNext: add --pack to write zips, or --push https://<box-ip>:8443/saves to upload.")
         return
+
+    ctx = cookie = None
+    if args.push:
+        ctx = make_ctx(args)
+        password = args.password or os.environ.get("GC_PASSWORD", "")
+        if not password and args.push.lower().startswith("https"):
+            password = getpass.getpass("Box web password (empty = try without login): ")
+        if password:
+            cookie = login(args.push, password, ctx)
 
     outdir = Path(args.out)
     if args.pack:
@@ -472,10 +540,10 @@ def main():
             dest.write_bytes(blob)
             print(f"  {emu:<12} → {dest}  ({human(len(blob))})")
         if args.push:
-            print(f"  {emu:<12} → {args.push} … {push(args.push, emu, blob)}")
+            print(f"  {emu:<12} → {args.push} … {push(args.push, emu, blob, ctx, cookie)}")
     if args.pack and not args.push:
         print("\nUpload each zip on the box: Save Manager → the system → 'Restore full backup',")
-        print("or run again with --push http://<box-ip>:8772")
+        print("or run again with --push https://<box-ip>:8443/saves")
 
 
 if __name__ == "__main__":

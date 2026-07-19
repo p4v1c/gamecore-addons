@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 ADDON_DIR = Path(__file__).parent
 PORT = int(os.environ.get("ADDON_PORT", 8799))
 
-app = FastAPI(title="GameCore addon — template")
+app = FastAPI(title="GameCore addon — template", root_path=os.environ.get("ADDON_BASE", ""))
 
 # The core UI and sibling addons live on other ports of the same host.
 

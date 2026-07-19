@@ -200,12 +200,12 @@ async function jsend(url,method,body){
 // ── Games sidebar ────────────────────────────────────────────────────────────
 async function loadGames() {
   try {
-    [games, {schema, globals} = {}] = await Promise.all([jget('/api/games'), jget('/api/schema')]);
+    [games, {schema, globals} = {}] = await Promise.all([jget('api/games'), jget('api/schema')]);
   } catch (e) { $('game-list').innerHTML = `<div class="empty">⚠ ${escHtml(e.message)}</div>`; return; }
   $('sidebar-sub').textContent = `${games.length} PS3 game${games.length !== 1 ? 's' : ''}`;
   $('game-list').innerHTML = games.map(g => `
     <div class="game-item" id="game-${g.serial}" onclick="selectGame('${g.serial}')">
-      <img class="game-icon" src="/api/games/${g.serial}/icon" loading="lazy" onerror="this.style.visibility='hidden'">
+      <img class="game-icon" src="api/games/${g.serial}/icon" loading="lazy" onerror="this.style.visibility='hidden'">
       <div class="game-info">
         <div class="game-title" title="${escHtml(g.title)}">${escHtml(g.title)}</div>
         <div class="game-serial">${g.serial}${g.has_custom_config ? '<span class="dot" title="Custom config"></span>' : ''}
@@ -251,7 +251,7 @@ async function removeGame() {
   if (active.source === 'hdd' &&
       !confirm('This is an HDD game: removing its dev_hdd0 data removes the game itself (saves are kept). Continue?')) return;
   try {
-    const r = await fetch(`/api/games/${active.serial}?data=${data}`, { method: 'DELETE' });
+    const r = await fetch(`api/games/${active.serial}?data=${data}`, { method: 'DELETE' });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.detail || r.status);
     toast(`${active.title} removed from the list${d.removed_data.length ? ` (+ ${d.removed_data.join(', ')})` : ''}`);
@@ -266,7 +266,7 @@ async function removeGame() {
 async function loadConfig() {
   $('content').innerHTML = '<div class="spinner"></div>';
   let data;
-  try { data = await jget(`/api/games/${active.serial}/config`); }
+  try { data = await jget(`api/games/${active.serial}/config`); }
   catch (e) { $('content').innerHTML = `<div class="empty">⚠ ${escHtml(e.message)}</div>`; return; }
   cfgState = { exists: data.exists, values: data.values, dirty: {} };
   renderConfig();
@@ -298,7 +298,7 @@ async function uploadPkg(file) {
   const form = new FormData();
   form.append('file', file);
   try {
-    const r = await fetch('/api/pkg/install', { method: 'POST', body: form });
+    const r = await fetch('api/pkg/install', { method: 'POST', body: form });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.detail || r.status);
     toast(`Uploading done — RPCS3 is installing ${file.name} on the box screen…`);
@@ -311,7 +311,7 @@ async function uploadPkg(file) {
 
 async function pollPkg() {
   try {
-    const s = await jget('/api/pkg/status');
+    const s = await jget('api/pkg/status');
     if (s.state === 'running') { setTimeout(pollPkg, 3000); return; }
     const dz = $('pkg-dz'); if (dz) dz.style.opacity = '1';
     if (s.state === 'done') {
@@ -382,7 +382,7 @@ function setVal(id, value) {
 async function saveConfig() {
   const n = Object.keys(cfgState.dirty).length;
   try {
-    const r = await jsend(`/api/games/${active.serial}/config`, 'PUT', { values: cfgState.dirty });
+    const r = await jsend(`api/games/${active.serial}/config`, 'PUT', { values: cfgState.dirty });
     toast(r.created ? `Custom config created (${n} change${n > 1 ? 's' : ''})` : `Saved — ${n} change${n > 1 ? 's' : ''} (backup kept)`);
     active.has_custom_config = true;
     await loadGames(); $(`game-${active.serial}`)?.classList.add('active');
@@ -393,7 +393,7 @@ async function saveConfig() {
 async function resetConfig() {
   if (!confirm(`Delete the custom configuration of ${active.title}?\nA backup will be kept next to it.`)) return;
   try {
-    await jsend(`/api/games/${active.serial}/config`, 'DELETE');
+    await jsend(`api/games/${active.serial}/config`, 'DELETE');
     toast('Custom config removed — game uses global settings again');
     active.has_custom_config = false;
     await loadGames(); $(`game-${active.serial}`)?.classList.add('active');
@@ -405,7 +405,7 @@ async function resetConfig() {
 async function loadPatches() {
   $('content').innerHTML = '<div class="spinner"></div>';
   let data;
-  try { data = await jget(`/api/games/${active.serial}/patches`); }
+  try { data = await jget(`api/games/${active.serial}/patches`); }
   catch (e) { $('content').innerHTML = `<div class="empty">⚠ ${escHtml(e.message)}</div>`; return; }
   const patches = data.patches, cur = data.current_version;
   window._patches = patches;
@@ -497,7 +497,7 @@ async function togglePatch(i, input) {
   const p = window._patches[i];
   input.disabled = true;
   try {
-    await jsend(`/api/games/${active.serial}/patches/toggle`, 'POST', {
+    await jsend(`api/games/${active.serial}/patches/toggle`, 'POST', {
       hash: p.hash, name: p.name, title: p.title,
       serial_key: p.serial_key, version: p.version, enabled: input.checked,
     });
@@ -516,7 +516,7 @@ function dropPatch(e) {
 async function downloadOfficial(btn) {
   btn.disabled = true; btn.textContent = '⏳ Downloading…';
   try {
-    const r = await fetch('/api/patches/download-official', { method: 'POST' });
+    const r = await fetch('api/patches/download-official', { method: 'POST' });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.detail || r.status);
     toast(`Official database updated — ${d.patches} patches (backup kept)`);
@@ -532,7 +532,7 @@ async function uploadPatch(file) {
   const form = new FormData();
   form.append('file', file);
   try {
-    const r = await fetch('/api/patches/upload', { method: 'POST', body: form });
+    const r = await fetch('api/patches/upload', { method: 'POST', body: form });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || r.status);
     toast(`${file.name}: ${data.merged} patch(es) merged into ${data.file}`);

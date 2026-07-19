@@ -250,11 +250,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
 <div id="toasts"></div>
 
 <script>
-// ROM API is served by this addon (same origin); icons and overlays live on
-// the GameCore core. Same convention as gamecore-nav.js (?gcport override).
-const CORE = location.protocol + '//' + location.hostname + ':' +
-  (new URLSearchParams(location.search).get('gcport') ||
-   localStorage.getItem('gamecore.corePort') || '8765');
+// ROM API is served by this addon (relative URLs — the page lives under the
+// /roms/ prefix behind Caddy, or at / on the loopback port). Core assets
+// (system icons, overlay previews) come from the SAME origin: Caddy routes
+// root-absolute /assets/* to the core. Overlay upload/delete go through this
+// addon's /api/overlays passthrough — the core API itself is never exposed.
 
 let emulators = [];
 let activeEmu = null;
@@ -277,7 +277,7 @@ function setAccentColor(color) {
 }
 
 async function loadEmulators() {
-  const res = await fetch('/api/emulators');
+  const res = await fetch('api/emulators');
   emulators = await res.json();
   renderSidebar();
 }
@@ -291,7 +291,7 @@ function renderSidebar() {
   list.innerHTML = emulators.map(e => `
     <div class="emu-item" id="emu-${e.id}" onclick="selectEmulator('${e.id}')"
          style="--emu-color:${e.color}">
-      <img class="emu-icon" src="${CORE}/${e.iconPath}" alt="${e.platform}" onerror="this.style.display='none'">
+      <img class="emu-icon" src="/${e.iconPath}" alt="${e.platform}" onerror="this.style.display='none'">
       <div class="emu-info">
         <div class="emu-name">${e.platform}</div>
         ${e.totalSize ? `<div class="emu-platform">${e.totalSize}</div>` : ''}
@@ -333,7 +333,7 @@ async function loadRoms(emuId) {
   const content = document.getElementById('content');
   content.innerHTML = '<div style="display:flex;justify-content:center;padding:60px"><div class="spinner"></div></div>';
 
-  const res = await fetch(`/api/roms/${emuId}`);
+  const res = await fetch(`api/roms/${emuId}`);
   const roms = await res.json();
 
   const badge = document.getElementById(`badge-${emuId}`);
@@ -401,7 +401,7 @@ async function deleteRom(emuId, filename, btn) {
   if (!confirm(`Delete "${filename}"?`)) return;
   btn.disabled = true;
   btn.textContent = '…';
-  const res = await fetch(`/api/roms/${emuId}/${encodeURIComponent(filename)}`, {method:'DELETE'});
+  const res = await fetch(`api/roms/${emuId}/${encodeURIComponent(filename)}`, {method:'DELETE'});
   if (res.ok) {
     btn.closest('.game-card').remove();
     const grid = document.querySelector('.games-grid');
@@ -501,7 +501,7 @@ function uploadOne(file, emuId) {
     setTimeout(() => toastEl.remove(), 5000);
   };
 
-  xhr.open('POST', `/api/roms/${emuId}/upload`);
+  xhr.open('POST', `api/roms/${emuId}/upload`);
   xhr.send(form);
 }
 
@@ -627,7 +627,7 @@ function uploadEntry(file, relpath, emuId, isLast, onProgress) {
       reject(new Error(msg));
     };
     xhr.onerror = () => reject(new Error('network error'));
-    xhr.open('POST', `/api/roms/${emuId}/upload-entry`);
+    xhr.open('POST', `api/roms/${emuId}/upload-entry`);
     xhr.send(form);
   });
 }
@@ -674,7 +674,7 @@ function closeOverlayModal() {
 
 function omLoadPreview() {
   const img = document.getElementById('om-img');
-  img.src = `${CORE}/assets/overlays/${activeEmu.id}.png?t=${Date.now()}`;
+  img.src = `/assets/overlays/${activeEmu.id}.png?t=${Date.now()}`;
   img.style.display = '';
   document.getElementById('om-none').style.display = 'none';
   document.getElementById('om-hint').textContent = '';
@@ -713,7 +713,7 @@ async function omUpload(file) {
   hint.textContent = 'Uploading…';
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(`${CORE}/api/overlays/${activeEmu.id}`, { method: 'POST', body: form });
+  const res = await fetch(`api/overlays/${activeEmu.id}`, { method: 'POST', body: form });
   if (res.ok) {
     hint.textContent = 'Saved!';
     omLoadPreview();
@@ -724,7 +724,7 @@ async function omUpload(file) {
 
 async function deleteOverlay() {
   if (!confirm('Remove the overlay for this emulator?')) return;
-  const res = await fetch(`${CORE}/api/overlays/${activeEmu.id}`, { method: 'DELETE' });
+  const res = await fetch(`api/overlays/${activeEmu.id}`, { method: 'DELETE' });
   if (res.ok) omImgError();
 }
 

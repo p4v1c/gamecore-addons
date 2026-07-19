@@ -26,7 +26,9 @@ addons/<name>/
   "type": "web",                  // web | service | tool
   "default": true,                // pre-checked in the GameCore installer
   "service": "user",              // user | system | none
-  "port": 8770,                   // web only — pick a free one in 8770-8799
+  "port": 8770,                   // web only — pick a free one in 8770-8799 (loopback only)
+  "path": "/roms",                // web only — URL prefix behind the Caddy proxy;
+                                  // needs a matching route in the core's install/Caddyfile
   "offline_assets": []            // files the ISO payload must provide when OFFLINE=1
 }
 ```
@@ -56,18 +58,39 @@ Rules:
 - Buildless by design: plain static `web/`, no npm build step, so the checkout
   is exactly what runs.
 
+## Security model (docs/SECURITY.md)
+
+The LAN reaches everything through the Caddy reverse-proxy on ONE origin
+(`https://box:8443`), which enforces the shared login. Consequences for
+addons:
+
+- **Bind loopback only**: `uvicorn.run(app, host="127.0.0.1", port=PORT)`.
+- **No CORS middleware** — everything is same-origin behind the proxy.
+- **No auth code** — Caddy logs the user in before your addon sees the
+  request; you only receive the `X-GC-User` header.
+- **Path prefix**: your unit gets `ADDON_BASE=/yourprefix` (see the template's
+  `install.sh`) and `server.py` passes it as FastAPI's `root_path`. Declare
+  the same prefix in `addon.json` `"path"` and add a `handle_path` route to
+  the core's `install/Caddyfile`.
+- **Relative client URLs only**: the page is served at `/yourprefix/`, so
+  `fetch('api/…')`, `src="api/…"` — never `/api/…`, never a host or port.
+  Root-absolute is allowed only for core statics that Caddy routes for you
+  (`/assets/…`, `/covers/…`).
+
 ## The shared nav (web addons)
 
 `install.sh` copies `shared/nav/gamecore-nav.{js,css}` into your `web/` and your
 page includes them (see the template's `index.html`). The bar fetches
-`http://<host>:8765/api/addons` from the core and links every installed web
-addon — that's what makes all addons feel like one site.
+`/gc/addons` (same origin — the only core payload proxied without a session)
+and links every installed web addon by its `path` — that's what makes all
+addons feel like one site.
 
 ## Talking to the core
 
-- Registry / nav data: `GET  http://<host>:8765/api/addons`
-- Refresh the TV UI after a change: `POST http://<host>:8765/api/addons/notify`
+- Server-side only, over loopback: `http://127.0.0.1:8765/api/…`
+- Refresh the TV UI after a change: `POST http://127.0.0.1:8765/api/addons/notify`
   with `{"event": "rom_uploaded", "data": {…}}` — the core broadcasts it on its
   WebSocket to the frontend.
-
-CORS is open on the core and should be open on your addon (see template).
+- The core API is NEVER reachable from the LAN: if your browser UI needs a
+  core endpoint, relay it through your own server (see rom-manager's
+  `/api/overlays` passthrough).

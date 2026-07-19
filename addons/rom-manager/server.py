@@ -16,7 +16,8 @@ from pathlib import Path
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 ADDON_DIR = Path(__file__).parent
@@ -28,7 +29,7 @@ CORE_NOTIFY = f"http://127.0.0.1:{CORE_PORT}/api/addons/notify"
 
 log = logging.getLogger("rom-manager")
 
-app = FastAPI(title="GameCore addon — ROM Manager")
+app = FastAPI(title="GameCore addon — ROM Manager", root_path=os.environ.get("ADDON_BASE", ""))
 
 
 # ── helpers (mirrored from the core so the addon stays self-contained) ────────
@@ -277,6 +278,35 @@ async def delete_rom(system_id: str, filename: str):
     # keep the TV UI in sync after a deletion too (same event family as upload)
     await notify_core("rom_deleted", {"system_id": system_id, "filename": safe})
     return {"ok": True}
+
+
+# ── Overlay passthrough ───────────────────────────────────────────────────────
+# The browser stays same-origin and the core API is never exposed to the LAN
+# (docs/SECURITY.md): overlay upload/delete are relayed to the core over
+# loopback. The core caps overlays at 10 MB, so buffering the body is fine.
+CORE_OVERLAYS = f"http://127.0.0.1:{CORE_PORT}/api/overlays"
+
+
+@app.post("/api/overlays/{system_id}")
+async def upload_overlay(system_id: str, request: Request):
+    get_system(system_id)  # 404 on unknown system before touching the core
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        r = await client.post(
+            f"{CORE_OVERLAYS}/{system_id}",
+            content=await request.body(),
+            headers={"content-type": request.headers.get("content-type", "")},
+        )
+    return Response(content=r.content, status_code=r.status_code,
+                    media_type=r.headers.get("content-type"))
+
+
+@app.delete("/api/overlays/{system_id}")
+async def delete_overlay(system_id: str):
+    get_system(system_id)
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        r = await client.delete(f"{CORE_OVERLAYS}/{system_id}")
+    return Response(content=r.content, status_code=r.status_code,
+                    media_type=r.headers.get("content-type"))
 
 
 app.mount("/", StaticFiles(directory=str(ADDON_DIR / "web"), html=True), name="web")

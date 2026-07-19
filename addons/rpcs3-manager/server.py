@@ -76,7 +76,7 @@ def yload(path: Path):
         raise HTTPException(500, f"cannot parse {path.name}: {e}")
 
 
-app = FastAPI(title="GameCore addon — RPCS3 Manager")
+app = FastAPI(title="GameCore addon — RPCS3 Manager", root_path=os.environ.get("ADDON_BASE", ""))
 
 
 @app.get("/api/health")

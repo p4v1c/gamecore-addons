@@ -31,6 +31,7 @@ After=network-online.target
 Type=simple
 Environment=GAMECORE_PATH=${GAMECORE_PATH}
 Environment=ADDON_PORT=${PORT}
+Environment=ADDON_BASE=/saves
 WorkingDirectory=${ADDON_DIR}
 ExecStart=${ADDON_DIR}/.venv/bin/python server.py
 Restart=on-failure

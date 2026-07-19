@@ -39,7 +39,7 @@ from guide import GUIDE
 ADDON_DIR = Path(__file__).parent
 PORT = int(os.environ.get("ADDON_PORT", 8772))
 
-app = FastAPI(title="GameCore addon — Save Manager")
+app = FastAPI(title="GameCore addon — Save Manager", root_path=os.environ.get("ADDON_BASE", ""))
 
 
 def fmt_size(n: float) -> str:

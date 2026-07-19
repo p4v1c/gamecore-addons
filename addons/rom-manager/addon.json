@@ -1,7 +1,7 @@
 {
   "name": "rom-manager",
   "label": "ROMs",
-  "description": "Upload ROMs from the browser \u2014 drag & drop files or whole game folders per system",
+  "description": "Upload ROMs from the browser — drag & drop files or whole game folders per system",
   "version": "1.1.1",
   "type": "web",
   "default": true,
@@ -9,5 +9,6 @@
   "port": 8770,
   "offline_assets": [
     "wheels"
-  ]
+  ],
+  "path": "/roms"
 }

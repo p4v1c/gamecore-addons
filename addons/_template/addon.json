@@ -7,5 +7,6 @@
   "default": false,
   "service": "user",
   "port": 8799,
-  "offline_assets": []
+  "offline_assets": [],
+  "path": "/template"
 }

@@ -158,7 +158,7 @@ function toast(m, err){const e=document.createElement('div');e.className='toast'
 async function jget(u){const r=await fetch(u);if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||r.status);return r.json()}
 
 async function loadEmulators() {
-  try { emulators = await jget('/api/emulators'); }
+  try { emulators = await jget('api/emulators'); }
   catch (e) { $('emu-list').innerHTML = `<div class="empty">⚠ ${esc(e.message)}</div>`; return; }
   const avail = emulators.filter(e => e.available).length;
   $('sidebar-sub').textContent = `${avail} systems`;
@@ -182,7 +182,7 @@ async function selectEmu(id) {
 
 async function load() {
   $('content').innerHTML = '<div class="spinner"></div>';
-  try { data = await jget(`/api/games/${active}`); }
+  try { data = await jget(`api/games/${active}`); }
   catch (e) { $('content').innerHTML = `<div class="empty">⚠ ${esc(e.message)}</div>`; return; }
   $('top-meta').textContent = data.base || '';
   $('top-actions').innerHTML = (data.games.length || data.other.length)
@@ -344,24 +344,24 @@ function guideHTML(g) {
       ${esc(g.restore)}
       ${g.notes.length ? `<div class="g-sec">Good to know</div><ul>${li(g.notes)}</ul>` : ''}
       <div class="g-sec">Or let the tool do it</div>
-      Download <a href="/tools/gamecore-save-export.py" download>gamecore-save-export.py</a>
+      Download <a href="tools/gamecore-save-export.py" download>gamecore-save-export.py</a>
       and run it on the PC — it finds the saves of every emulator, packs upload-ready zips
       and can push them straight to this box:
-      <pre>python gamecore-save-export.py --push http://${esc(location.host)}</pre>
+      <pre>python gamecore-save-export.py --push ${esc(location.origin + location.pathname.replace(/\/$/, ''))} --password …</pre>
     </div>
   </details>`;
 }
 
 function toggle(key){ openKeys.has(key)?openKeys.delete(key):openKeys.add(key); render(); }
-function dl(id){ window.location = `/api/saves/${active}/download?id=${encodeURIComponent(id)}`; }
-function dlSave(id, serial){ window.location = `/api/saves/${active}/download?id=${encodeURIComponent(id)}&save=${encodeURIComponent(serial)}`; }
-function dlGame(key){ window.location = `/api/games/${active}/download?key=${encodeURIComponent(key)}`; }
-function dlAll(){ window.location = `/api/saves/${active}/download-all`; }
+function dl(id){ window.location = `api/saves/${active}/download?id=${encodeURIComponent(id)}`; }
+function dlSave(id, serial){ window.location = `api/saves/${active}/download?id=${encodeURIComponent(id)}&save=${encodeURIComponent(serial)}`; }
+function dlGame(key){ window.location = `api/games/${active}/download?key=${encodeURIComponent(key)}`; }
+function dlAll(){ window.location = `api/saves/${active}/download-all`; }
 
 async function delSave(id, saveKey, name) {
   if (!confirm(`Delete "${name}" from this memory card?\nThe whole card is backed up first.`)) return;
   try {
-    const r = await fetch(`/api/saves/${active}?id=${encodeURIComponent(id)}&save=${encodeURIComponent(saveKey)}`, { method: 'DELETE' });
+    const r = await fetch(`api/saves/${active}?id=${encodeURIComponent(id)}&save=${encodeURIComponent(saveKey)}`, { method: 'DELETE' });
     if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || r.status);
     toast(`Deleted from the card (backup kept): ${name}`); load(); loadEmulators();
   } catch (e) { toast(`Delete failed: ${e.message}`, true); }
@@ -370,7 +370,7 @@ async function delSave(id, saveKey, name) {
 async function restoreBak(id, name, when) {
   if (!confirm(`Restore the backup of "${name}" from ${when}?\nThe current version is backed up first.`)) return;
   try {
-    const r = await fetch(`/api/backups/${active}/restore?id=${encodeURIComponent(id)}`, { method: 'POST' });
+    const r = await fetch(`api/backups/${active}/restore?id=${encodeURIComponent(id)}`, { method: 'POST' });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.detail || r.status);
     toast(`Backup restored: ${d.restored}`); load(); loadEmulators();
@@ -380,7 +380,7 @@ async function restoreBak(id, name, when) {
 async function delBak(id, name) {
   if (!confirm(`Delete this backup of "${name}"?\nThis can't be undone (it's the safety copy itself).`)) return;
   try {
-    const r = await fetch(`/api/backups/${active}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const r = await fetch(`api/backups/${active}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
     if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || r.status);
     toast(`Backup deleted: ${name}`); load();
   } catch (e) { toast(`Delete failed: ${e.message}`, true); }
@@ -390,7 +390,7 @@ async function upFull(file) {
   if (!file) return;
   const form = new FormData(); form.append('file', file);
   try {
-    const r = await fetch(`/api/saves/${active}/upload-full`, { method: 'POST', body: form });
+    const r = await fetch(`api/saves/${active}/upload-full`, { method: 'POST', body: form });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.detail || r.status);
     toast(`Restored: ${d.restored.join(', ')} (backups kept)`); load(); loadEmulators();
@@ -401,7 +401,7 @@ async function inject(file, col, cardName) {
   if (!file) return;
   const form = new FormData(); form.append('file', file);
   try {
-    const r = await fetch(`/api/saves/${active}/upload?collection=${col}&card=${encodeURIComponent(cardName)}`, { method: 'POST', body: form });
+    const r = await fetch(`api/saves/${active}/upload?collection=${col}&card=${encodeURIComponent(cardName)}`, { method: 'POST', body: form });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.detail || r.status);
     toast(`Added to ${cardName}: ${d.restored.join(', ')} (card backed up)`); load(); loadEmulators();
@@ -411,7 +411,7 @@ async function inject(file, col, cardName) {
 async function del(id, name) {
   if (!confirm(`Delete "${name}"?\nA backup is kept next to it, but the game won't see this save anymore.`)) return;
   try {
-    const r = await fetch(`/api/saves/${active}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const r = await fetch(`api/saves/${active}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
     if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || r.status);
     toast(`Deleted (backup kept): ${name}`); load(); loadEmulators();
   } catch (e) { toast(`Delete failed: ${e.message}`, true); }
@@ -421,7 +421,7 @@ async function up(file, col) {
   if (!file) return;
   const form = new FormData(); form.append('file', file);
   try {
-    const r = await fetch(`/api/saves/${active}/upload?collection=${col}`, { method: 'POST', body: form });
+    const r = await fetch(`api/saves/${active}/upload?collection=${col}`, { method: 'POST', body: form });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.detail || r.status);
     toast(`Restored: ${d.restored.join(', ')} (backup kept)`); load(); loadEmulators();

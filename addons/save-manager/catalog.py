@@ -37,6 +37,7 @@ Identity sources per system:
              for the display name and cover.
   GBA/DS   — ROM base name, matched to the GameCore covers. Unchanged.
 """
+import json
 import os
 import re
 from pathlib import Path, PurePosixPath
@@ -171,17 +172,35 @@ def _base_savecount(emu_id: str, base: Path) -> int:
 _base_choice: dict = {}
 
 
+def _declared_flatpak(emu_id: str):
+    """True/False when the box's systems.json declares this emulator flatpak/
+    native, None when it doesn't say (absent, unreadable, or no such id)."""
+    try:
+        systems = json.loads((GC / "config" / "systems.json").read_text())
+        path = next((s.get("path", "") for s in systems if s.get("id") == emu_id), "")
+    except (OSError, ValueError):
+        return None
+    return path == "flatpak" if path else None
+
+
 def resolve_base(emu_id: str) -> Path | None:
     """The emulator's data dir. When several candidate bases exist (e.g. a
     Switch box with both Ryujinx and a yuzu-family emulator installed), pick the
     one that actually holds the most saves rather than blindly the first — so a
     freshly installed, empty emulator never hides an established save library.
+    Ties go to the install systems.json declares (flatpak vs native): after a
+    native→flatpak migration both trees hold identical copies, and the frozen
+    native backup must not shadow the tree the emulator actually writes to.
     The save-count globs are memoized on the candidate dirs' mtimes: scan()
     runs on every request and re-globbing each time would be wasteful."""
     existing = [b for b in CATALOG[emu_id]["bases"] if b.exists()]
     if len(existing) <= 1:
         return existing[0] if existing else None
-    sig = tuple((str(b), b.stat().st_mtime_ns) for b in existing)
+    declared = _declared_flatpak(emu_id)
+    if declared is not None:
+        # stable: declared variant first, so max() picks it on equal counts
+        existing.sort(key=lambda b: (".var/app" in str(b)) != declared)
+    sig = (declared,) + tuple((str(b), b.stat().st_mtime_ns) for b in existing)
     hit = _base_choice.get(emu_id)
     if hit is None or hit[0] != sig:
         hit = (sig, max(existing, key=lambda b: _base_savecount(emu_id, b)))

@@ -96,30 +96,15 @@ def build_tree():
     (tr / "TROPCONF.SFM").write_text("<trophyconf><title-name>Demon Quest</title-name></trophyconf>")
     (tr / "TROPUSR.DAT").write_bytes(b"t" * 128)
 
-    # Ryujinx — one save with ExtraData, one identified via imkvdb.arc only
-    ry = HOME / ".var/app/io.github.ryubing.Ryujinx/config/Ryujinx"
-    MK8 = 0x0100152000022000                      # Mario Kart 8 (known title)
-    s1 = ry / "bis/user/save/0000000000000001"
-    (s1 / "0").mkdir(parents=True)
-    (s1 / "0/game.sav").write_bytes(b"mk8" * 100)
-    (s1 / "1").mkdir()
-    extra = bytearray(0x200)
-    struct.pack_into("<Q", extra, 0, MK8)
-    extra[0x20] = 1                               # Account save
-    (s1 / "ExtraData0").write_bytes(extra)
-    s2 = ry / "bis/user/save/0000000000000002"    # no ExtraData → indexer
-    (s2 / "0").mkdir(parents=True)
-    (s2 / "0/other.bin").write_bytes(b"z" * 64)
-    key = bytearray(0x40)
-    struct.pack_into("<Q", key, 0, 0x01007EF00011E000)   # Zelda BOTW
-    key[0x20] = 1
-    val = bytearray(0x40)
-    struct.pack_into("<Q", val, 0, 2)
-    arc = b"IMKV" + b"\x00" * 4 + struct.pack("<i", 1)
-    arc += b"IMEN" + struct.pack("<ii", 0x40, 0x40) + bytes(key) + bytes(val)
-    idx = ry / "bis/system/save/8000000000000000/0"
-    idx.mkdir(parents=True)
-    (idx / "imkvdb.arc").write_bytes(arc)
+    # citron-neo (yuzu-family) — the save folder name IS the title id
+    cn_user = (HOME / ".local/share/citron/nand/user/save/0000000000000000"
+                    / "E21A853F9C1C5BC30CFEB4E127CDA487")
+    s1 = cn_user / "0100152000022000"             # Mario Kart 8 (known title)
+    s1.mkdir(parents=True)
+    (s1 / "game.sav").write_bytes(b"mk8" * 100)
+    s2 = cn_user / "01007EF00011E000"             # Zelda BOTW
+    s2.mkdir()
+    (s2 / "other.bin").write_bytes(b"z" * 64)
 
     # Xenia — portable content dir with one save + its header + the profile
     xe = GC / "lib/xenia/content/E030000012345678"
@@ -275,36 +260,37 @@ def test_zip_roundtrip():
     check("traversal refused", r.status_code == 403)
 
 
-def test_ryujinx():
-    print("Ryujinx (Switch)")
-    g = games("ryujinx")
+def test_citron_neo():
+    print("citron-neo (Switch)")
+    g = games("citron-neo")
     keys = {x["key"]: x for x in g["games"]}
-    check("ExtraData save identified", "0100152000022000" in keys, str(list(keys)))
+    check("title-id save identified", "0100152000022000" in keys, str(list(keys)))
     check("known title resolved", keys.get("0100152000022000", {}).get("title") == "Mario Kart 8 Deluxe")
-    check("indexer-only save identified", "01007EF00011E000" in keys)
+    check("second save identified", "01007EF00011E000" in keys)
 
-    r = client.get("/api/games/ryujinx/download", params={"key": "0100152000022000"})
+    r = client.get("/api/games/citron-neo/download", params={"key": "0100152000022000"})
     zf = zipfile.ZipFile(io.BytesIO(r.content))
     check("normalized switch-title zip",
           zf.namelist() == ["switch-title/0100152000022000/1/game.sav"], str(zf.namelist()))
 
-    # wreck the save, then restore the normalized zip → lands in 0/ AND 1/
-    base = HOME / ".var/app/io.github.ryubing.Ryujinx/config/Ryujinx"
-    sdir = base / "bis/user/save/0000000000000001"
-    (sdir / "0/game.sav").write_bytes(b"corrupted")
-    r2 = client.post("/api/saves/ryujinx/upload-full",
+    # wreck the save, then restore the normalized zip
+    sdir = (HOME / ".local/share/citron/nand/user/save/0000000000000000"
+                 / "E21A853F9C1C5BC30CFEB4E127CDA487/0100152000022000")
+    (sdir / "game.sav").write_bytes(b"corrupted")
+    r2 = client.post("/api/saves/citron-neo/upload-full",
                      files={"file": ("mk8.zip", io.BytesIO(r.content))})
     check("normalized restore ok", r2.status_code == 200, r2.text)
-    check("restored into 0/", (sdir / "0/game.sav").read_bytes() == b"mk8" * 100)
-    check("mirrored into 1/", (sdir / "1/game.sav").read_bytes() == b"mk8" * 100)
+    check("restored", (sdir / "game.sav").read_bytes() == b"mk8" * 100)
 
-    # a title with no container on the box is refused with a clear message
+    # a title never seen on the box restores too — the dir name IS the id,
+    # so the container is simply created under the most-populated account
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("switch-title/0100000000010000/1/save.bin", b"odyssey")
     buf.seek(0)
-    r3 = client.post("/api/saves/ryujinx/upload-full", files={"file": ("x.zip", buf)})
-    check("unknown container refused", r3.status_code == 400 and "launch the game" in r3.text)
+    r3 = client.post("/api/saves/citron-neo/upload-full", files={"file": ("x.zip", buf)})
+    check("new container created", r3.status_code == 200
+          and (sdir.parent / "0100000000010000/save.bin").read_bytes() == b"odyssey", r3.text)
 
     # normalized members are refused on the wrong system
     buf.seek(0)
@@ -449,7 +435,7 @@ if __name__ == "__main__":
     test_pcsx2_shared_card()
     test_dolphin_gci()
     test_rpcs3_grouping()
-    test_ryujinx()
+    test_citron_neo()
     test_xenia()
     test_shadps4()
     test_zip_roundtrip()

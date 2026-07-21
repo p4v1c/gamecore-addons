@@ -19,9 +19,9 @@ per-emulator transfer guide in the UI and a standalone PC export tool.
   in place: a patched copy is re-parsed and verified before the original is
   overwritten (ECC PS2 cards are read-only). DuckStation's default
   per-game-title cards are attributed to their game automatically.
-- **Ryujinx save identity** (`ryujinx.py`): `bis/user/save/0000000000000005`
-  says nothing about the game — the addon reads each save's `ExtraData0`
-  (falling back to the `imkvdb.arc` indexer) to show the real title.
+- **Switch save identity**: citron-neo (yuzu-family) names each save dir after
+  its title id — the addon maps it straight to the game (the PC export tool
+  still resolves Ryujinx's install-numbered dirs when importing from a PC).
 - **Full backup / full restore**: one zip per emulator (or per game) that can
   be restored on *any* install — see "normalized formats" below.
 - **Transfer from PC**: each system shows where its saves live on a Windows /
@@ -45,7 +45,7 @@ On the box (as configured by the GameCore installer — first existing path wins
 | PSP | PPSSPP | `…/ppsspp/PSP/SAVEDATA/<GAMEID…>/` | `PSP/PPSSPP_STATE/` |
 | Wii U | Cemu | `…/Cemu/mlc01/usr/save/00050000/<tid-lo>/` | — (none in Cemu) |
 | 3DS | Azahar | `…/azahar-emu/sdmc/Nintendo 3DS/<id0>/<id1>/title/00040000/<tid-lo>/data/00000001/` (+ `extdata`) | `states/<tid>.<slot>.cst` |
-| Switch | Ryujinx | `…/Ryujinx/bis/user/save/<install-specific id>/{0,1}/` | — |
+| Switch | citron-neo | `~/.local/share/citron/nand/user/save/0000000000000000/<user>/<titleid>/` | — |
 | X360 | Xenia Canary | `lib/xenia/content/<XUID>/<TitleID>/00000001/` (+ `Headers/`) | — |
 | PS4 | shadPS4 | `…/shadPS4/home/1/savedata/<CUSA…>/` (≤0.15: `savedata/1/<CUSA…>/`) | — |
 
@@ -60,15 +60,14 @@ Native saves are portable, but three systems hide them behind
 
 | Prefix in the zip | System | Why raw paths don't transfer |
 |---|---|---|
-| `switch-title/<titleid>/<type>/…` | Switch | Ryujinx numbers save dirs per install (`bis/user/save/…05`); yuzu-family uses per-install user dirs |
+| `switch-title/<titleid>/<type>/…` | Switch | yuzu-family uses per-install user dirs; Ryujinx numbers save dirs per install (`bis/user/save/…05`) |
 | `x360-title/<TitleID>/…` | Xbox 360 | Xenia saves live under the profile's XUID |
 | `ps4-title/<CUSA…>/<savedir>/…` | PS4 | shadPS4 moved its savedata dir in v0.16 |
 
 Downloads from this addon ("⬇ all", "Full backup") already use these prefixes;
-`POST /api/saves/<emu>/upload-full` maps them back onto the local install (for
-Switch, the game must have been launched once on the box so its save container
-exists). Everything else uses plain base-relative paths (`memcards/…`,
-`dev_hdd0/…`) that restore as-is.
+`POST /api/saves/<emu>/upload-full` maps them back onto the local install.
+Everything else uses plain base-relative paths (`memcards/…`, `dev_hdd0/…`)
+that restore as-is.
 
 ## The PC export tool
 

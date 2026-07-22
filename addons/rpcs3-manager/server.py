@@ -10,6 +10,7 @@ scalars ("16:9", "01.10") that a naive round-trip would corrupt.
 import asyncio
 import datetime
 import glob
+import json
 import os
 import re
 import shutil
@@ -31,19 +32,56 @@ ADDON_DIR = Path(__file__).parent
 GAMECORE_PATH = Path(os.environ.get("GAMECORE_PATH", "/opt/GameCore"))
 PORT = int(os.environ.get("ADDON_PORT", 8771))
 _SERIAL_RE = re.compile(r"^[A-Z0-9]{9}$")
-# The RPCS3 binary — overridable; defaults to the GameCore box layout.
-RPCS3_BIN = os.environ.get("RPCS3_BIN", str(GAMECORE_PATH / "lib" / "rpcs3"))
+RPCS3_FLATPAK = "net.rpcs3.RPCS3"
+
+
+def _declared_path() -> str:
+    """The `path` of the rpcs3 entry in the box's systems.json ("flatpak" or a
+    native launcher path). "" when unreadable/absent — the addon then falls
+    back to what exists on disk, so it still works off-box."""
+    try:
+        systems = json.loads((GAMECORE_PATH / "config" / "systems.json").read_text())
+        return next((s.get("path", "") for s in systems if s.get("id") == "rpcs3"), "")
+    except (OSError, ValueError):
+        return ""
 
 
 def config_dir() -> Path:
-    """RPCS3 config dir — env override, then native, then flatpak."""
+    """RPCS3 config dir — env override, then the install systems.json declares
+    (flatpak vs native), then whichever exists. A native dir kept around as a
+    post-migration backup must not shadow the flatpak the box actually runs."""
     env = os.environ.get("RPCS3_CONFIG_DIR")
     if env:
         return Path(env)
     native = Path.home() / ".config" / "rpcs3"
-    if native.exists():
+    flatpak = Path.home() / ".var/app" / RPCS3_FLATPAK / "config" / "rpcs3"
+    declared = _declared_path()
+    if declared == "flatpak":
+        return flatpak
+    if declared:
         return native
-    return Path.home() / ".var/app/net.rpcs3.RPCS3/config/rpcs3"
+    return native if native.exists() else flatpak
+
+
+def rpcs3_cmd(extra_env: dict | None = None):
+    """argv launching the configured RPCS3, or None when none is installed.
+    RPCS3_BIN env wins; otherwise systems.json decides flatpak vs the native
+    binary. extra_env is injected into the flatpak sandbox (--env=), which
+    plain process env can't reach."""
+    env_bin = os.environ.get("RPCS3_BIN")
+    if env_bin:
+        return [env_bin] if Path(env_bin).exists() else None
+    if _declared_path() == "flatpak":
+        have = subprocess.run(["flatpak", "info", RPCS3_FLATPAK],
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode == 0
+        if not have:
+            return None
+        return (["flatpak", "run"]
+                + [f"--env={k}={v}" for k, v in (extra_env or {}).items()]
+                + [RPCS3_FLATPAK])
+    native = GAMECORE_PATH / "lib" / "rpcs3"
+    return [str(native)] if native.exists() else None
 
 
 _KEEP_BACKUPS = 3
@@ -630,8 +668,8 @@ async def install_pkg(file: UploadFile = File(...)):
     name = Path(file.filename or "").name
     if not name.lower().endswith(".pkg"):
         raise HTTPException(415, "not a .pkg file")
-    if not Path(RPCS3_BIN).exists():
-        raise HTTPException(503, f"RPCS3 binary not found at {RPCS3_BIN}")
+    if rpcs3_cmd() is None:
+        raise HTTPException(503, "RPCS3 not found (native binary or flatpak)")
     if _pkg_job["state"] == "running":
         raise HTTPException(409, "a .pkg install is already running")
     # Claim the job BEFORE the first await — otherwise two concurrent uploads
@@ -653,8 +691,11 @@ async def install_pkg(file: UploadFile = File(...)):
 
         before = _hdd_snapshot()
         try:
+            cmd = rpcs3_cmd(extra_env=disp)
+            if cmd is None:
+                raise HTTPException(503, "RPCS3 not found (native binary or flatpak)")
             proc = subprocess.Popen(
-                [RPCS3_BIN, "--installpkg", str(dest)],
+                [*cmd, "--installpkg", str(dest)],
                 env={**os.environ, **disp},
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True,

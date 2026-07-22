@@ -32,6 +32,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import memcard
+import ryujinx as ryu
 from catalog import CATALOG, resolve_base, scan, sony_game
 from guide import GUIDE
 
@@ -482,16 +483,22 @@ def _arc_items(emu_id: str, base: Path, cols: list, entries: list) -> list[tuple
     """(source path, zip name) per scan entry. Most entries are archived under
     their base-relative path. Game saves of the id-dependent emulators get a
     NORMALIZED prefix instead, so the zip restores on any install:
-      Switch  switch-title/<title id>/<save type>/…   (yuzu-family user dirs
-              are install-specific)
+      Switch  switch-title/<title id>/<save type>/…   (Ryujinx ids and yuzu
+              user dirs are install-specific)
       X360    x360-title/<TitleID>/…                  (Xenia profile XUIDs differ)
       PS4     ps4-title/<CUSA…>/<savedir>/…           (shadPS4 moved dirs in v0.16)
     /upload-full maps those prefixes back onto the local install."""
     items = []
     for e in entries:
         col, p = cols[e["ci"]], e["path"]
-        if e["key"] and emu_id == "citron-neo":
-            if col["subpath"] == "nand/user/save":
+        if e["key"] and emu_id == "ryujinx":
+            if col["subpath"] == "bis/user/save":
+                tid, typ = ryu.identify(base, p)
+                if tid:
+                    src = next((p / c for c in ("0", "1") if (p / c).is_dir()), p)
+                    items.append((src, f"switch-title/{tid}/{typ or 1}"))
+                    continue
+            elif col["subpath"] == "nand/user/save":
                 items.append((p, f"switch-title/{e['key']}/1"))
                 continue
         elif e["key"] and emu_id == "xenia":
@@ -628,7 +635,7 @@ def delete_backup(emu_id: str, id: str):
     return {"ok": True}
 
 
-_NORM_TAGS = {"switch-title": "citron-neo", "x360-title": "xenia", "ps4-title": "shadps4"}
+_NORM_TAGS = {"switch-title": "ryujinx", "x360-title": "xenia", "ps4-title": "shadps4"}
 
 
 def _clear_dir(d: Path) -> None:
@@ -659,23 +666,46 @@ def _restore_normalized(emu_id: str, base: Path, zf: zipfile.ZipFile,
     """Write switch-title/… x360-title/… ps4-title/… members onto this
     install's own layout (see _arc_items). `norm` = [(ZipInfo, rel parts)]."""
     restored = []
-    if emu_id == "citron-neo":
-        # group by title id; yuzu-family layout: dir name IS the title id
+    if emu_id == "ryujinx":
+        # group by (title id, save type); target the local save container
         groups: dict = {}
         for m, parts in norm:
             if len(parts) < 4 or not re.fullmatch(r"[0-9A-Fa-f]{16}", parts[1]):
                 raise HTTPException(400, f"malformed switch save path '{m.filename}'")
             groups.setdefault((parts[1].upper(), parts[2]), []).append((m, parts[3:]))
-        for (tid, _typ), files in sorted(groups.items()):
-            user_root = base / "nand/user/save/0000000000000000"
-            d = user_root / _yuzu_user_for(user_root, tid) / tid
-            _backup(d)
-            _clear_dir(d)
-            for m, rest in files:
-                dest = d / Path(*rest)
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(zf.read(m))
-            restored.append(tid)
+        ryujinx_layout = (base / "bis/user/save").is_dir()
+        tmap = ryu.title_map(base) if ryujinx_layout else {}
+        for (tid, typ), files in sorted(groups.items()):
+            if ryujinx_layout:
+                try:
+                    want = int(typ)
+                except ValueError:
+                    want = 1
+                d = (tmap.get((tid, want)) or tmap.get((tid, 1))
+                     or next((v for (t, _y), v in sorted(tmap.items()) if t == tid), None))
+                if d is None:
+                    raise HTTPException(400,
+                        f"no save container for title {tid} on this box — launch the "
+                        "game once (or open its save directory in Ryujinx), then retry")
+                _backup(d)
+                for c in ("0", "1"):     # 0 = committed, 1 = working: write both
+                    _clear_dir(d / c)
+                for m, rest in files:
+                    for c in ("0", "1"):
+                        dest = d / c / Path(*rest)
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        dest.write_bytes(zf.read(m))
+                restored.append(f"{tid} → {d.name}")
+            else:                        # yuzu-family layout: dir name IS the title id
+                user_root = base / "nand/user/save/0000000000000000"
+                d = user_root / _yuzu_user_for(user_root, tid) / tid
+                _backup(d)
+                _clear_dir(d)
+                for m, rest in files:
+                    dest = d / Path(*rest)
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(zf.read(m))
+                restored.append(tid)
         return restored
 
     if emu_id == "xenia":

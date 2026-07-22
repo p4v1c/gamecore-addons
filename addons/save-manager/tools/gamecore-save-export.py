@@ -251,15 +251,13 @@ def _ryujinx_indexer(base: Path) -> dict:
     return out
 
 
-def scan_switch(override):
-    """yuzu-family (nand/…, ids literal — citron/citron-neo, yuzu, sudachi)
-    AND Ryujinx (bis/…, ids resolved)."""
+def scan_ryujinx(override):
+    """Ryujinx (bis/…, ids resolved) AND yuzu-family (nand/…, ids literal)."""
     bases = ([override] if override else
-             [APPDATA / "citron", HOME / ".local/share/citron",
+             [APPDATA / "Ryujinx", HOME / ".config/Ryujinx",
+              HOME / ".var/app/io.github.ryubing.Ryujinx/config/Ryujinx",
               APPDATA / "yuzu", APPDATA / "sudachi",
-              HOME / ".local/share/yuzu", HOME / ".local/share/sudachi",
-              APPDATA / "Ryujinx", HOME / ".config/Ryujinx",
-              HOME / ".var/app/io.github.ryubing.Ryujinx/config/Ryujinx"])
+              HOME / ".local/share/yuzu", HOME / ".local/share/sudachi"])
     out, used = [], None
     for b in bases:
         b = Path(b)
@@ -339,7 +337,7 @@ SCANNERS = {
     "ppsspp": ("PSP (PPSSPP)", scan_ppsspp),
     "dolphin": ("GameCube / Wii (Dolphin)", scan_dolphin),
     "cemu": ("Wii U (Cemu)", scan_cemu),
-    "citron-neo": ("Switch (yuzu-family / Ryujinx)", scan_switch),
+    "ryujinx": ("Switch (Ryujinx / yuzu-family)", scan_ryujinx),
     "azahar": ("Nintendo 3DS (Azahar / Citra)", scan_azahar),
     "gopher64": ("Nintendo 64 (gopher64)", scan_gopher64),
     "mgba": ("Game Boy Advance (mGBA — needs --path mgba=ROMDIR)", scan_mgba),

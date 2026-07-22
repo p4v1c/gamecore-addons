@@ -28,21 +28,21 @@ Identity sources per system:
              <hi>/<lo> (meta/meta.xml longname + iconTex.tga), 3DS
              title/<hi>/<lo> (matched to .3ds NCSD media ids), Switch
              <TITLE-ID> (well-known ids + ids found in ROM file names).
-             citron-neo (yuzu-family) names each save dir after its title id
-             directly. Standalone Dolphin .gci files are read for their game
-             code.
+             Ryujinx save dirs are install-numbered — ryujinx.py resolves them
+             to title ids via ExtraData0 / the imkvdb.arc indexer. Standalone
+             Dolphin .gci files are read for their game code.
   X360     — content/<XUID>/<TitleID>; the save's display name is read from
              its Headers/…/*.header package metadata.
   N64      — internal cartridge name (ROM header), matched to the box's ROMs
              for the display name and cover.
   GBA/DS   — ROM base name, matched to the GameCore covers. Unchanged.
 """
-import json
 import os
 import re
 from pathlib import Path, PurePosixPath
 
 import memcard
+import ryujinx
 import sfo
 
 # GAMECORE_HOME lets tests (and unusual setups) point the scan somewhere else.
@@ -111,10 +111,15 @@ CATALOG = {
         HOME / ".var/app/info.cemu.Cemu/data/Cemu", HOME / ".local/share/Cemu"], "collections": [
         C("mlc01/usr/save", "dirs", "save", (), "wiiu", glob="*/*"),
     ]},
-    "citron-neo": {"label": "Nintendo Switch", "bases": [
-        # citron-neo (yuzu-family) still uses the historical citron data dir
-        HOME / ".local/share/citron"], "collections": [
-        # yuzu-family layout: the folder name IS the title id
+    "ryujinx": {"label": "Nintendo Switch", "bases": [
+        HOME / ".var/app/io.github.ryubing.Ryujinx/config/Ryujinx",
+        HOME / ".config/Ryujinx"], "collections": [
+        # Ryujinx layout: install-specific save ids, identified via ExtraData /
+        # the imkvdb.arc indexer (see ryujinx.py)
+        C("bis/user/save", "dirs", "save", (), "ryujinx_save"),
+        # yuzu-family layout: the folder name IS the title id. No such emulator
+        # ships a base here by default; a machine that keeps one (a legacy
+        # install) can point at it with local_bases.json (see _load_local_bases).
         C("nand/user/save", "dirs", "save", (), "switch", glob="0000000000000000/*/*"),
         C("nand/user/save/cache", "dirs", "save", (), "shared"),
     ]},
@@ -175,6 +180,7 @@ _base_choice: dict = {}
 def _declared_flatpak(emu_id: str):
     """True/False when the box's systems.json declares this emulator flatpak/
     native, None when it doesn't say (absent, unreadable, or no such id)."""
+    import json
     try:
         systems = json.loads((GC / "config" / "systems.json").read_text())
         path = next((s.get("path", "") for s in systems if s.get("id") == emu_id), "")
@@ -450,7 +456,7 @@ def _switch_dir_names(d: Path, cache_key: str) -> dict:
 
 def _switch_names() -> dict:
     out = dict(_SWITCH_KNOWN)
-    for i, d in enumerate((ROMS / "citron-neo", ROMS / "Switch DLC & Updates")):
+    for i, d in enumerate((ROMS / "citron", ROMS / "Switch DLC & Updates")):
         for tid, name in _switch_dir_names(d, f"switch{i}").items():
             out.setdefault(tid, name)
     return out
@@ -698,6 +704,18 @@ def _res_switch(base, cdir, rel):
     return tid, name or tid, cover_for(name or "")
 
 
+def _res_ryujinx_save(base, cdir, rel):
+    """Ryujinx bis/user/save/<install-specific id> → title id via ExtraData /
+    the imkvdb.arc indexer (ryujinx.py). Unidentifiable dirs go to shared."""
+    if not re.fullmatch(r"[0-9A-Fa-f]{16}", rel.name):
+        return "", "", None
+    tid, _typ = ryujinx.identify(base, cdir / rel)
+    if not tid:
+        return "", "", None
+    name = _switch_names().get(tid)
+    return tid, name or tid, cover_for(name or "")
+
+
 def _x360_header_name(d: Path) -> str:
     """Save display name from a Xenia content header (XCONTENT_DATA: u32
     device id, u32 content type, then a UTF-16 display name — guest structs
@@ -776,7 +794,7 @@ _RESOLVERS = {
     "psp_save": _res_psp_save, "psp_state": _res_psp_state,
     "wii": _res_wii, "dolphin_state": _res_dolphin_state,
     "n3ds": _res_n3ds, "n3ds_state": _res_n3ds_state,
-    "wiiu": _res_wiiu, "switch": _res_switch,
+    "wiiu": _res_wiiu, "switch": _res_switch, "ryujinx_save": _res_ryujinx_save,
     "x360": _res_x360, "ps4_save": _res_ps4_save,
 }
 

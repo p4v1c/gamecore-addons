@@ -143,22 +143,23 @@ GUIDE = {
         "notes": ["Some games keep progress in extdata (sdmc\\…\\extdata\\…) — bring it too; it shows "
                   "under Shared & system files."],
     },
-    "citron-neo": {
+    "ryujinx": {
         "pc": [
-            {"os": "Windows", "path": "%AppData%\\citron\\nand\\user\\save\\0000000000000000\\<user>\\<titleid>",
-             "note": "citron-neo still uses the citron data dir; yuzu/sudachi are the same layout"},
-            {"os": "Linux", "path": "~/.local/share/citron/nand/user/save/0000000000000000/<user>/<titleid>",
-             "note": ""},
-            {"os": "Ryujinx", "path": "%AppData%\\Ryujinx\\bis\\user\\save",
-             "note": "install-numbered dirs — use the PC export tool, it resolves them to title ids"},
+            {"os": "Windows", "path": "%AppData%\\Ryujinx\\bis\\user\\save",
+             "note": "portable mode: portable\\bis\\user\\save next to the exe"},
+            {"os": "Linux", "path": "~/.config/Ryujinx/bis/user/save", "note": ""},
+            {"os": "yuzu/sudachi", "path": "%AppData%\\yuzu\\nand\\user\\save\\0000000000000000\\<user>\\<titleid>",
+             "note": "yuzu-family keeps saves per title id directly"},
         ],
-        "grab": ["yuzu-family (citron/yuzu/sudachi): the <titleid> folder itself",
-                 "Ryujinx: right-click the game → 'Open User Save Directory' → copy the contents of 0\\ "
-                 "(the folder number is install-specific — don't rely on it)"],
-        "restore": "Use the PC export tool — it packs an id-independent zip "
-                   "(switch-title/<titleid>/…) that the full-restore zone maps onto this box. "
+        "grab": ["Ryujinx: right-click the game → 'Open User Save Directory' → copy the contents of 0\\ "
+                 "(the folder number is install-specific — don't rely on it)",
+                 "yuzu-family: the <titleid> folder itself"],
+        "restore": "Use the PC export tool — it reads the PC's save index and packs an id-independent "
+                   "zip (switch-title/<titleid>/…) that the full-restore zone maps onto this box. "
                    "Manual zips must use those switch-title/… paths.",
-        "notes": ["Downloads from this addon are already in the id-independent format."],
+        "notes": ["The game must have a save container on the box first: launch it once, or open its "
+                  "save directory in Ryujinx.",
+                  "Downloads from this addon are already in the id-independent format."],
     },
     "xenia": {
         "pc": [

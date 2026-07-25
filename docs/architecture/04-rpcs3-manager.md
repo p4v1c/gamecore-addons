@@ -1,118 +1,120 @@
 # 4 — rpcs3-manager (:8771, `/rpcs3`)
 
-Configure PS3 games remotely, in RPCS3's own vocabulary: per-game config,
-patches, and `.pkg` installation. `server.py` 726 l., plus `ryaml.py` (50) and
-`schema.py` (96).
+Configurer les jeux PS3 à distance, dans le vocabulaire de RPCS3 : config par
+jeu, patches, et installation de `.pkg`. `server.py` 726 l., plus `ryaml.py`
+(50) et `schema.py` (96).
 
-## Finding RPCS3
+## Trouver RPCS3
 
-The box may run RPCS3 as a Flatpak or a native build, and the addon must edit
-the config of **the install the box actually launches**.
+Le boîtier peut faire tourner RPCS3 en Flatpak ou en build natif, et l'addon
+doit éditer la config de **l'installation que le boîtier lance réellement**.
 
-| Function | Role |
+| Fonction | Rôle |
 |---|---|
-| `_declared_path()` | the `path` of the `rpcs3` entry in the box's `systems.json` |
-| `config_dir()` | env override, then the directory implied by that declared install |
-| `rpcs3_cmd(extra_env)` | argv that launches the configured RPCS3, or `None` |
-| `backup(path)` | timestamped `.bak` before touching an existing file |
-| `yload(path)` | read a YAML file through `ryaml` |
+| `_declared_path()` | le `path` de l'entrée `rpcs3` dans le `systems.json` du boîtier |
+| `config_dir()` | surcharge par variable d'environnement, puis le dossier impliqué par cette installation |
+| `rpcs3_cmd(extra_env)` | l'argv qui lance le RPCS3 configuré, ou `None` |
+| `backup(path)` | `.bak` horodaté avant de toucher un fichier existant |
+| `yload(path)` | lit un fichier YAML via `ryaml` |
 
-## `ryaml.py` — string-preserving YAML
+## `ryaml.py`
 
-**The single most important module in this addon.** RPCS3 config and patch
-files are full of scalars that YAML 1.1 silently reinterprets:
+**Le module le plus important de cet addon.** Les fichiers de config et de
+patches de RPCS3 sont remplis de scalaires que YAML 1.1 réinterprète
+silencieusement :
 
-| In the file | What PyYAML makes of it | What RPCS3 needs |
+| Dans le fichier | Ce qu'en fait PyYAML | Ce dont RPCS3 a besoin |
 |---|---|---|
-| `On` / `Off` | `True` / `False` | the strings `On` / `Off` |
-| `1.10` | float `1.1` | the string `1.10` |
+| `On` / `Off` | `True` / `False` | les chaînes `On` / `Off` |
+| `1.10` | flottant `1.1` | la chaîne `1.10` |
 | `No` | `False` | `No` |
 
-Round-tripping a config through stock PyYAML therefore **corrupts it**, and
-RPCS3 answers by silently ignoring the file. `_StrLoader` overrides
-`compose_node` so every scalar stays a string; `_StrDumper` writes them back
-unquoted the way RPCS3 does. `load(text)` / `dump(data)` are the only entry
-points.
+Faire un aller-retour d'une config à travers PyYAML standard la **corrompt**
+donc, et RPCS3 répond en ignorant le fichier sans un mot. `_StrLoader`
+surcharge `compose_node` pour que chaque scalaire reste une chaîne ;
+`_StrDumper` les réécrit sans guillemets comme le fait RPCS3. `load(text)` /
+`dump(data)` sont les seuls points d'entrée.
 
-> Do not "simplify" this to `yaml.safe_load`. It has been tried; it breaks
-> every custom config on the box.
+> Ne « simplifiez » pas ceci en `yaml.safe_load`. Ça a été tenté ; ça casse
+> toutes les configs personnalisées du boîtier.
 
-Belt and braces on top of it: `_edit_config_text(text, section, key, value)`
-does a **surgical line edit** — change or insert one key inside one section,
-touching nothing else. `_fmt_value(value)` formats a scalar the way RPCS3
-writes it (with `"Null"` as the documented exception).
+Ceinture et bretelles par-dessus : `_edit_config_text(text, section, key, value)`
+fait une **édition de ligne chirurgicale** — change ou insère une clé dans une
+section, sans toucher au reste. `_fmt_value(value)` formate un scalaire comme
+RPCS3 l'écrit (avec `"Null"` comme exception documentée).
 
-## `schema.py` — the curated config surface
+## `schema.py` — la surface de configuration retenue
 
-`f(section, key, type_, **kw)` builds one field; the module is a list of them
-mirroring the RPCS3 UI tabs. The enum strings are the **exact** serializations
-RPCS3 expects — a typo produces a config the emulator ignores without an error.
-`GET /api/schema` hands it to the UI, which renders the form generically.
+`f(section, key, type_, **kw)` construit un champ ; le module est une liste de
+ces champs, calquée sur les onglets de l'interface RPCS3. Les chaînes d'énumération
+sont les sérialisations **exactes** attendues par RPCS3 — une faute de frappe
+produit une config que l'émulateur ignore sans erreur. `GET /api/schema` la
+transmet à l'interface, qui rend le formulaire de façon générique.
 
 ## Routes
 
-### Games
+### Jeux
 
-| Route | Function | Notes |
+| Route | Fonction | Notes |
 |---|---|---|
 | `GET /api/health` | `health()` | |
-| `GET /api/games` | `list_games()` | scans `emu/rpcs3/`, reads title/serial from `PARAM.SFO` via `shared/py/sfo.py` |
+| `GET /api/games` | `list_games()` | balaye `emu/rpcs3/`, lit titre et série depuis `PARAM.SFO` via `shared/py/sfo.py` |
 | `GET /api/games/{serial}/icon` | `game_icon(serial)` | `PS3_GAME/ICON0.PNG` |
-| `DELETE /api/games/{serial}` | `remove_game(serial, data)` | drops the game's line from RPCS3's `games.yml` |
+| `DELETE /api/games/{serial}` | `remove_game(serial, data)` | retire la ligne du jeu du `games.yml` de RPCS3 |
 
-Helpers: `_disc_sfo(game_path)`, `_check_serial(serial)` (validates the path
-segment), and `_game_versions(cfg, serial, base_ver)` — the effective app
-versions, disc `APP_VER` plus any installed update.
+Utilitaires : `_disc_sfo(game_path)`, `_check_serial(serial)` (valide le segment
+de chemin) et `_game_versions(cfg, serial, base_ver)` — les versions
+applicatives effectives, `APP_VER` du disque plus toute mise à jour installée.
 
-### Per-game config
+### Config par jeu
 
-| Route | Function |
+| Route | Fonction |
 |---|---|
 | `GET /api/games/{serial}/config` | `get_game_config(serial)` |
 | `PUT /api/games/{serial}/config` | `put_game_config(serial, body)` — `ConfigBody` |
 | `DELETE /api/games/{serial}/config` | `reset_game_config(serial)` |
 
-`_custom_path(serial)` locates the per-game YAML in RPCS3's custom-config
-directory. `_get_path(tree, segments)` / `_set_path(tree, segments, value)`
-walk the nested tree; `_schema_values(tree)` projects it onto the schema for
-the UI.
+`_custom_path(serial)` localise le YAML par jeu dans le dossier de configs
+personnalisées de RPCS3. `_get_path(tree, segments)` /
+`_set_path(tree, segments, value)` parcourent l'arbre imbriqué ;
+`_schema_values(tree)` le projette sur le schéma pour l'interface.
 
-> Per-game configs live under RPCS3's own config directory — the same one the
-> emulator reads at launch. Which directory that is depends on
-> Flatpak-vs-native, hence `config_dir()`.
+> Les configs par jeu vivent dans le dossier de configuration propre à RPCS3 —
+> celui que l'émulateur lit au lancement. Lequel c'est dépend du couple
+> Flatpak/natif, d'où `config_dir()`.
 
 ### Patches
 
-| Route | Function |
+| Route | Fonction |
 |---|---|
 | `GET /api/games/{serial}/patches` | `game_patches(serial)` |
 | `POST /api/games/{serial}/patches/toggle` | `toggle_patch(serial, body)` — `ToggleBody` |
 | `POST /api/patches/download-official` | `download_official_patches()` |
 | `POST /api/patches/upload` | `upload_patch(file)` |
 
-- `_patch_files(serial)` — which patch files apply to a serial.
-- `_enabled_key(tree)` — **version drift**: the box's RPCS3 writes `Enabled`,
-  newer sources say `enabled`. This picks whichever the file uses instead of
-  guessing.
-- `_validate_patch_yaml(tree)` — counts real patch entries (a `Patch` list plus
-  a `Games` map) before accepting an upload, so a stray YAML file cannot be
-  merged in as a patch.
-- `upload_patch()` validates then merges into `imported_patch.yml`.
+- `_patch_files(serial)` — quels fichiers de patch s'appliquent à une série.
+- `_enabled_key(tree)` — **dérive de version** : le RPCS3 du boîtier écrit
+  `Enabled`, les sources plus récentes disent `enabled`. Ceci choisit ce que le
+  fichier utilise au lieu de deviner.
+- `_validate_patch_yaml(tree)` — compte les vraies entrées de patch (une liste
+  `Patch` plus une table `Games`) avant d'accepter un envoi, pour qu'un fichier
+  YAML égaré ne soit pas fusionné comme un patch.
+- `upload_patch()` valide puis fusionne dans `imported_patch.yml`.
 
-### `.pkg` installation
+### Installation de `.pkg`
 
-Updates and DLC ship as `.pkg` files, and RPCS3 installs them through its GUI.
-The addon drives that headlessly:
+Les mises à jour et DLC arrivent en fichiers `.pkg`, et RPCS3 les installe via
+son interface graphique. L'addon pilote cela sans interface :
 
-| Function | Role |
+| Fonction | Rôle |
 |---|---|
-| `_discover_display()` | env (`DISPLAY` + `XAUTHORITY`) for the box's active X session |
-| `_hdd_snapshot()` | listing of `dev_hdd0/game` before the install |
-| `_watch_install(proc, dest, before)` | detects the install landing, then closes RPCS3 |
-| `_finish_job(proc, dest, before)` | job completion bookkeeping |
-| `GET /api/pkg/status` → `pkg_status()` | poll from the UI |
-| `POST /api/pkg/install` → `install_pkg(file)` | start the job |
+| `_discover_display()` | l'environnement (`DISPLAY` + `XAUTHORITY`) de la session X active du boîtier |
+| `_hdd_snapshot()` | listing de `dev_hdd0/game` avant l'installation |
+| `_watch_install(proc, dest, before)` | détecte l'arrivée de l'installation, puis ferme RPCS3 |
+| `_finish_job(proc, dest, before)` | comptabilité de fin de tâche |
+| `GET /api/pkg/status` → `pkg_status()` | interrogation depuis l'interface |
+| `POST /api/pkg/install` → `install_pkg(file)` | démarre la tâche |
 
-The snapshot-diff approach exists because RPCS3 gives no machine-readable
-signal that a `.pkg` finished: the addon watches the directory instead, then
-terminates the emulator itself.
+L'approche par différence d'instantanés existe parce que RPCS3 ne donne aucun
+signal exploitable par une machine indiquant qu'un `.pkg` est terminé :
+l'addon surveille le dossier à la place, puis termine l'émulateur lui-même.

@@ -16,7 +16,8 @@ else
   "${ADDON_DIR}/.venv/bin/pip" install -q -r "${ADDON_DIR}/requirements.txt"
 fi
 
-echo "[${ADDON_NAME}] Shared nav component"
+echo "[${ADDON_NAME}] Shared components"
+cp "${ADDON_DIR}/../../shared/py/sfo.py"          "${ADDON_DIR}/"
 cp "${ADDON_DIR}/../../shared/nav/gamecore-nav.js"  "${ADDON_DIR}/web/"
 cp "${ADDON_DIR}/../../shared/nav/gamecore-nav.css" "${ADDON_DIR}/web/"
 

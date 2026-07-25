@@ -85,6 +85,18 @@ page includes them (see the template's `index.html`). The bar fetches
 and links every installed web addon by its `path` — that's what makes all
 addons feel like one site.
 
+## Shared Python (`shared/py/`)
+
+Same contract, server side. An addon runs from its own directory with its own
+venv, so it never imports across the tree: `install.sh` copies what it needs
+next to `server.py` and the addon just does `import sfo`. Copies are
+gitignored, `shared/py/` is the only version to edit.
+
+Currently there: `sfo.py`, a minimal PARAM.SFO reader (title, serial, version,
+category — same binary format on PS3, PS4 and PSP). Adding a module means
+dropping it in `shared/py/`, adding the `cp` line to the addons that want it,
+and gitignoring the copy.
+
 ## Talking to the core
 
 - Server-side only, over loopback: `http://127.0.0.1:8765/api/…`

@@ -38,17 +38,25 @@ registry (`$GAMECORE_PATH/config/addons.json`). Only `web` addons get a link.
 Web addons include the shared nav bar (`shared/nav/`) so all UIs feel like one
 site with sections — users never see ports.
 
+Anything under `shared/` is copied into the addon by its `install.sh`, never
+imported across the tree (each addon runs from its own directory with its own
+venv): `shared/nav/` for the nav bar, `shared/py/` for Python modules such as
+the PARAM.SFO reader. The copies are gitignored — `shared/` is the only
+version to edit.
+
 ## Available addons
 
 | addon | type | port | description |
 |-------|------|------|-------------|
 | [rom-manager](addons/rom-manager) | web | 8770 | Upload ROMs from the browser (drag & drop per system) |
 | [rpcs3-manager](addons/rpcs3-manager) | web | 8771 | Configure PS3 games remotely — per-game config & patches, RPCS3-style |
-| [save-manager](addons/save-manager) | web | 8772 | Back up / restore / delete emulator saves & save states (all systems) |
-| [local-coop](addons/local-coop) | web | 8773 | Automatic split-screen: launch a linked-instances game (DS/3DS/PSP) with 2+ pads → N players (gamescope + bubblewrap) |
+| [save-manager](addons/save-manager) | web | 8772 | Back up / restore / delete emulator saves & save states (all systems), incl. inside PS1/PS2 memory cards |
 
 Ports 8770–8799 are reserved for addons; each addon declares its own in `addon.json`.
 
 ## Creating an addon
 
 Copy `addons/_template/` and read [docs/CREATING_AN_ADDON.md](docs/CREATING_AN_ADDON.md).
+For how the whole thing fits together — the model, the registry, the install
+contract, what each addon does internally and the traps — see
+[docs/architecture/](docs/architecture/) (in French).

@@ -1,33 +1,31 @@
 # 5 — save-manager (:8772, `/saves`)
 
-Le plus gros addon : `server.py` 831 l., `catalog.py` 849, `memcard.py` 842,
-`guide.py` 191, `ryujinx.py` 98, plus `tools/gamecore-save-export.py` (550) et
-deux modules de tests.
+The largest addon: `server.py` 831 l., `catalog.py` 849, `memcard.py` 842,
+`guide.py` 191, `ryujinx.py` 98, plus `tools/gamecore-save-export.py` (550) and
+two test modules.
 
-Il parcourt, sauvegarde, restaure et supprime les sauvegardes de chaque
-émulateur du boîtier — y compris les sauvegardes de jeu individuelles *à
-l'intérieur* d'une carte mémoire PlayStation partagée — et importe des
-sauvegardes depuis un PC.
+It browses, backs up, restores and deletes saves for every emulator on the box
+— including the individual game saves *inside* a shared PlayStation memory
+card — and imports saves from a PC.
 
-## Le problème qu'il résout
+## The problem it solves
 
-Chaque émulateur a inventé sa propre réponse à « où va une sauvegarde, et à
-quel jeu appartient-elle ». Certains utilisent le nom de la ROM, d'autres un
-numéro de série de disque, d'autres un nom interne de cartouche, d'autres un
-identifiant de titre 16 hex, d'autres un compteur local à l'installation, et
-deux d'entre eux empaquettent tous les jeux dans un unique fichier binaire.
+Every emulator invented its own answer to "where does a save go, and which game
+does it belong to". Some use the ROM filename, some a disc serial, some an
+internal cartridge name, some a 16-hex title id, some an install-local counter,
+and two of them pack every game into one binary card file.
 
 ```mermaid
 flowchart LR
     scan["scan(emu_id)"] --> cand["_candidates(cdir, col)"]
-    cand --> res["un résolveur par collection<br/>_res_rom · _res_ps_serial · _res_switch<br/>_res_ryujinx_save · _res_x360 · _res_ps4_save …"]
-    res --> id["identité du jeu :<br/>titre + jaquette + clé de regroupement"]
-    id --> ui["regroupé par jeu dans l'interface"]
+    cand --> res["a per-collection resolver<br/>_res_rom · _res_ps_serial · _res_switch<br/>_res_ryujinx_save · _res_x360 · _res_ps4_save …"]
+    res --> id["game identity:<br/>title + cover + group key"]
+    id --> ui["grouped by game in the UI"]
 ```
 
-## Le catalogue
+## The catalog
 
-`catalog.py` est la carte. Une entrée par émulateur :
+`catalog.py` is the map. One entry per emulator:
 
 ```python
 "gopher64": {"label": "Nintendo 64", "bases": [
@@ -38,174 +36,165 @@ flowchart LR
 ]},
 ```
 
-`C(subpath, mode, kind, exts, group, glob)` décrit une collection : où elle se
-trouve sous la base, si les entrées sont des fichiers ou des dossiers, s'il
-s'agit de sauvegardes ou d'états, quelles extensions comptent, et **quel
-résolveur** leur donne une identité.
+`C(subpath, mode, kind, exts, group, glob)` describes one collection: where it
+sits under the base, whether entries are files or directories, whether they are
+saves or states, which extensions count, and **which resolver** gives them an
+identity.
 
-`bases` est une **liste** parce que le même émulateur peut être installé en
-Flatpak ou en natif — et les deux dossiers peuvent exister avec un seul
-réellement utilisé :
+`bases` is a **list** because the same emulator may be installed as Flatpak or
+native — and both directories may exist with only one of them in use:
 
-| Fonction | Rôle |
+| Function | Role |
 |---|---|
-| `resolve_base(emu_id)` | choisit la bonne base quand plusieurs candidates existent |
-| `_declared_flatpak(emu_id)` | ce que le `systems.json` du boîtier dit de l'installation |
-| `_base_savecount(emu_id, base)` | comptage bon marché des entrées qu'une base produirait — le départage |
-| `_load_local_bases()` | fusionne des surcharges propres à la machine depuis un `local_bases.json` optionnel (gitignoré) |
+| `resolve_base(emu_id)` | picks the right base when several candidates exist |
+| `_declared_flatpak(emu_id)` | what the box's `systems.json` says the install is |
+| `_base_savecount(emu_id, base)` | cheap count of entries a base would yield — the tie-breaker |
+| `_load_local_bases()` | merges machine-specific overrides from an optional `local_bases.json` (gitignored) |
 
-**Ajouter un émulateur = ajouter une entrée de catalogue.** Rien d'autre ne
-change.
+**Adding an emulator = adding one catalog entry.** Nothing else changes.
 
-## Donner un nom à une sauvegarde
+## Giving a save a name
 
-L'essentiel de `catalog.py` est la résolution d'identité — transformer un
-chemin en « ceci est *Mario Kart DS* » plus une jaquette.
+The bulk of `catalog.py` is identity resolution — turning a path into "this is
+*Mario Kart DS*" plus a cover.
 
-| Résolveur | Émulateur / disposition |
+| Resolver | Emulator / layout |
 |---|---|
-| `_res_rom` | la sauvegarde est à côté de la ROM, même racine de nom |
-| `_res_n64` | nom interne de cartouche depuis l'en-tête ROM (`@0x20`) — `_n64_names()` |
-| `_res_ps_serial`, `_res_card_or_serial` | numéro de série de disque PS1/PS2 — `disc_serial()`, `_sony_serial()` |
-| `_res_gc_card` | le dossier GC de Dolphin mêle des cartes `.raw` brutes et des dossiers GCI |
-| `_res_wii`, `_res_dolphin_state` | `_wii_names()`, `_hex_ascii()` (le mot bas de l'identifiant de titre est le code de jeu 4 caractères en hexadécimal) |
-| `_res_n3ds`, `_res_n3ds_state` | `_3ds_names()` — identifiant de titre depuis le media id NCSD |
+| `_res_rom` | save sits next to the ROM, same stem |
+| `_res_n64` | internal cartridge name from the ROM header (`@0x20`) — `_n64_names()` |
+| `_res_ps_serial`, `_res_card_or_serial` | PS1/PS2 disc serial — `disc_serial()`, `_sony_serial()` |
+| `_res_gc_card` | Dolphin's GC dir mixes raw `.raw` cards with GCI folders |
+| `_res_wii`, `_res_dolphin_state` | `_wii_names()`, `_hex_ascii()` (title-id low word is the 4-char game code in hex) |
+| `_res_n3ds`, `_res_n3ds_state` | `_3ds_names()` — title id from the NCSD media id |
 | `_res_wiiu` | `_wiiu_longname(meta_xml)` |
-| `_res_switch` | `_switch_names()`, `_switch_dir_names()` — identifiant de titre de base depuis les ids de mise à jour/DLC |
-| `_res_ryujinx_save` | identifiant de dossier local à l'installation → identifiant de titre, voir plus bas |
-| `_res_rpcs3_save`, `_res_rpcs3_trophy`, `_res_rpcs3_state` | `_savedata_index()` construit série → (TITLE, ICON0) depuis les `PARAM.SFO` ; `_match_savedata_title()` rattache un ensemble de trophées à son jeu |
+| `_res_switch` | `_switch_names()`, `_switch_dir_names()` — base title id from update/DLC ids |
+| `_res_ryujinx_save` | install-local directory id → title id, see below |
+| `_res_rpcs3_save`, `_res_rpcs3_trophy`, `_res_rpcs3_state` | `_savedata_index()` builds serial → (TITLE, ICON0) from `PARAM.SFO`s; `_match_savedata_title()` attaches a trophy set to its game |
 | `_res_psp_save`, `_res_psp_state` | |
-| `_res_x360` | `content/<XUID>/<TitleID>` ; `_x360_header_name()` lit l'en-tête XCONTENT |
-| `_res_ps4_save` | `savedata/<CUSA#####>/<savedir>` ; `_ps4_titles()` depuis les dumps de `emu/shadps4` |
+| `_res_x360` | `content/<XUID>/<TitleID>`; `_x360_header_name()` reads the XCONTENT header |
+| `_res_ps4_save` | `savedata/<CUSA#####>/<savedir>`; `_ps4_titles()` from the dumps in `emu/shadps4` |
 
-Second rôle : `cover_for(*candidates)` associe un jeu à une jaquette GameCore
-(les jaquettes portent le nom des racines de ROM), `_clean_stem()` /
-`_prettify()` / `_collapse()` transforment un nom de fichier en nom affichable,
-`_cached(key, dep, build)` mémorise les constructions d'index coûteuses contre
-une dépendance bon marché.
+Supporting cast: `cover_for(*candidates)` matches a game to a GameCore cover
+(covers are named after ROM stems), `_clean_stem()` / `_prettify()` /
+`_collapse()` turn a filename into a display name, `_cached(key, dep, build)`
+memoises the expensive index builds against a cheap dependency.
 
-## Identité des sauvegardes Ryujinx — `ryujinx.py`
+## Ryujinx save identity — `ryujinx.py`
 
-Ryujinx nomme ses dossiers de sauvegarde avec un **compteur propre à
-l'installation** (`0000000000000001`), pas l'identifiant de titre. Le même jeu
-vit donc dans un dossier différent sur chaque boîtier, et une sauvegarde ne
-peut pas être déplacée d'une machine à l'autre par le seul chemin.
+Ryujinx names save directories with an **install-specific counter**
+(`0000000000000001`), not the title id. The same game therefore lives in a
+different directory on every box, and a save cannot be moved between machines
+by path alone.
 
-| Fonction | Rôle |
+| Function | Role |
 |---|---|
-| `save_attr(save_dir)` | `(identifiant de titre 16 hex majuscules, type)` depuis l'ExtraData du dossier |
-| `indexer(base)` | nom de dossier → `(identifiant de titre, type)` pour toute l'installation |
-| `identify(base, save_dir)` | au mieux, pour un dossier |
-| `title_map(base)` | `(identifiant de titre, type) → Path` — ce dont la restauration a besoin |
+| `save_attr(save_dir)` | `(title id 16-hex upper, type)` from the directory's ExtraData |
+| `indexer(base)` | save dir name → `(title id, type)` for the whole install |
+| `identify(base, save_dir)` | best-effort for one directory |
+| `title_map(base)` | `(title id, type) → Path` — what restore needs |
 
-## Cartes mémoire — `memcard.py`
+## Memory cards — `memcard.py`
 
-PS1, PS2 et GameCube empaquettent la sauvegarde de chaque jeu dans **un seul
-fichier binaire de carte**. Extraire un jeu impose d'analyser ce format ; le
-réimporter impose de reconstruire la FAT et les entrées de répertoire. 842
-lignes, trois codecs.
+PS1, PS2 and GameCube pack every game's save into **one binary card file**.
+Extracting one game means parsing that format; re-importing means rebuilding
+the FAT and the directory entries. 842 lines, three codecs.
 
-| Format | Lecture | Export | Import | Suppression |
+| Format | Read | Export | Import | Delete |
 |---|---|---|---|---|
 | PS1 | `_ps1_saves`, `_ps1_entry`, `_ps1_chain`, `_ps1_name`, `_ps1_offset` | `_ps1_export` (`.mcs`) | `_ps1_import` | `_ps1_delete` |
-| PS2 | `_Ps2` (vue en lecture, `mutable=True` pour les cartes sans ECC), `_ps2_saves`, `_ps2_folder`, `_ps2_title` | `_ps2_export` (`.psu`) | `_ps2_import`, `_parse_psu`, `_mk_entry` | `_ps2_delete` |
+| PS2 | `_Ps2` (read view, `mutable=True` for no-ECC cards), `_ps2_saves`, `_ps2_folder`, `_ps2_title` | `_ps2_export` (`.psu`) | `_ps2_import`, `_parse_psu`, `_mk_entry` | `_ps2_delete` |
 | GameCube | `_gc_saves`, `_gc_dir`, `_gc_bat`, `_gc_entries`, `_gc_chain`, `_gc_active` | `_gc_export` (`.gci`) | `_gc_import`, `_gc_write_dir`, `_gc_write_bat` | `_gc_delete` |
 
-Surface publique : `read_saves(path)`, `export_save(card_bytes, key)`,
+Public surface: `read_saves(path)`, `export_save(card_bytes, key)`,
 `import_save(card_bytes, blob, blob_name)`, `delete_save(card_bytes, key)`,
-`gci_info(path)` (en-tête d'un `.gci` autonome).
+`gci_info(path)` (header of a standalone `.gci`).
 
-Détails faciles à rater et déjà traités :
+Details that are easy to get wrong and are already handled:
 
-- **`_ps1_cksum` / `_gc_csum`** — chaque format a sa propre somme de contrôle,
-  et un émulateur rejette (ou corrompt silencieusement) une carte dont la somme
-  est périmée.
-- **`_gc_active(data, blocks, cs_off, ctr_off)`** — le GameCube conserve deux
-  copies du répertoire et de la BAT ; la vivante est « somme de contrôle valide,
-  compteur le plus élevé ». Écrire la mauvaise perd des sauvegardes.
-- **`_ps1_delete` bascule chaque trame de la chaîne vers son état supprimé**
-  plutôt que de la mettre à zéro — c'est ce que fait la console, et ce que les
-  émulateurs attendent.
-- **`_jis(raw)`** — les titres PS sont en Shift-JIS, souvent en pleine chasse ;
-  l'interface a besoin de texte propre.
-- **`_is_ps2` / `_is_gc`** — reniflage de format, parce que l'extension ment.
+- **`_ps1_cksum` / `_gc_csum`** — each format has its own checksum, and an
+  emulator rejects (or silently corrupts) a card whose checksum is stale.
+- **`_gc_active(data, blocks, cs_off, ctr_off)`** — GameCube keeps two copies
+  of the directory and BAT; the live one is "valid checksum, highest counter".
+  Writing the wrong copy loses saves.
+- **`_ps1_delete` flips every frame of the chain to its deleted state** rather
+  than zeroing — that is what the console does, and what emulators expect.
+- **`_jis(raw)`** — PS titles are Shift-JIS, often full-width; the UI needs
+  clean text.
+- **`_is_ps2` / `_is_gc`** — format sniffing, because the extension lies.
 
-> `tests/test_memcard.py` (271 l.) n'est pas optionnel. Ce code édite une
-> structure binaire qui, mal manipulée, détruit la bibliothèque de sauvegardes
-> d'un utilisateur sans le moindre message d'erreur.
+> `tests/test_memcard.py` (271 l.) is not optional. This code edits a binary
+> structure that, done wrong, destroys a user's save library with no error
+> message.
 
-## Serveur — `server.py`
+## Server — `server.py`
 
-### Listage
+### Listing
 
-| Route | Fonction | Notes |
+| Route | Function | Notes |
 |---|---|---|
 | `GET /api/health` | `health()` | |
-| `GET /api/emulators` | `list_emulators()` | entrées du catalogue présentes sur ce boîtier |
-| `GET /api/games/{emu_id}` | `list_games(emu_id)` | sauvegardes **regroupées par jeu** (icône + nom + fichiers) |
-| `GET /api/games/{emu_id}/icon` | `game_icon(emu_id, key)` | icône de la sauvegarde, ou la jaquette GameCore |
+| `GET /api/emulators` | `list_emulators()` | catalog entries that exist on this box |
+| `GET /api/games/{emu_id}` | `list_games(emu_id)` | saves **grouped by game** (icon + name + files) |
+| `GET /api/games/{emu_id}/icon` | `game_icon(emu_id, key)` | savedata icon, or the GameCore cover |
 
-`_entries(emu_id, internal)` lance le balayage, `_collection_dir(emu_id, ci)`
-résout un dossier de collection, `_resolve_entry(emu_id, entry_id)` retrouve le
-chemin depuis un identifiant d'entrée (`'<collection>/<chemin relatif>'`).
-`_tga_to_png(data)` convertit les `iconTex.tga` Wii U (type 2 non compressé,
-24/32 bits) parce que les navigateurs ne lisent pas le TGA.
+`_entries(emu_id, internal)` runs the scan, `_collection_dir(emu_id, ci)`
+resolves a collection directory, `_resolve_entry(emu_id, entry_id)` maps an
+entry id (`'<collection>/<relative path>'`) back to a path.
+`_tga_to_png(data)` converts Wii U `iconTex.tga` (type-2 uncompressed 24/32-bit)
+because browsers do not read TGA.
 
-### Transfert
+### Transfer
 
-| Route | Fonction | Notes |
+| Route | Function | Notes |
 |---|---|---|
-| `GET /api/saves/{emu_id}/download` | `download(emu_id, id, save)` | une entrée, ou une sauvegarde extraite d'une carte |
-| `POST /api/saves/{emu_id}/upload` | `upload(emu_id, collection, file, card)` | une entrée, ou injection dans une carte |
+| `GET /api/saves/{emu_id}/download` | `download(emu_id, id, save)` | one entry, or one save out of a card |
+| `POST /api/saves/{emu_id}/upload` | `upload(emu_id, collection, file, card)` | one entry, or inject into a card |
 | `DELETE /api/saves/{emu_id}` | `delete(emu_id, id, save)` | |
-| `GET /api/games/{emu_id}/download` | `download_game(emu_id, key)` | tout ce qui compose un jeu |
-| `GET /api/saves/{emu_id}/download-all` | `download_all(emu_id)` | sauvegarde complète de l'émulateur |
-| `POST /api/saves/{emu_id}/upload-full` | `upload_full(emu_id, file)` | restaure une archive de jeu complet ou de sauvegarde totale |
+| `GET /api/games/{emu_id}/download` | `download_game(emu_id, key)` | everything one game is made of |
+| `GET /api/saves/{emu_id}/download-all` | `download_all(emu_id)` | full emulator backup |
+| `POST /api/saves/{emu_id}/upload-full` | `upload_full(emu_id, file)` | restore a whole-game / full backup |
 
-`_zip_entries(items)` construit l'archive (les backups n'y sont jamais
-inclus), `_arc_items(emu_id, base, cols, entries)` décide du nom de chaque
-membre.
+`_zip_entries(items)` builds the archive (backups are never included),
+`_arc_items(emu_id, base, cols, entries)` decides each member's name.
 
 ### Backups
 
-`_backup(path, prune)` fait un instantané avant chaque opération destructive et
-élague les anciens. `_backups(emu_id)`, `list_backups`, `restore_backup`,
-`delete_backup` les exposent. Restaurer un backup **sauvegarde d'abord l'état
-courant** : l'opération est donc réversible.
+`_backup(path, prune)` snapshots before every destructive operation and prunes
+old ones. `_backups(emu_id)`, `list_backups`, `restore_backup`, `delete_backup`
+expose them. Restoring a backup **backs up the current state first**, so the
+operation is reversible.
 
-## Le format d'archive normalisé
+## The normalized archive format
 
-Les membres d'un zip existent en deux saveurs :
+Zip members come in two flavours:
 
-| Nature | Forme du chemin | Portable |
+| Kind | Path shape | Portable |
 |---|---|---|
-| simple | relatif à la base de l'émulateur | non — disposition propre à l'installation |
-| **normalisé** | `switch-title/<TID>/…`, `x360-title/…`, `ps4-title/…` | **oui** — porte l'identifiant de titre |
+| plain | relative to the emulator base | no — install-specific layout |
+| **normalized** | `switch-title/<TID>/…`, `x360-title/…`, `ps4-title/…` | **yes** — carries the title id |
 
-Les membres normalisés sont ce qui permet à une sauvegarde de passer d'un
-boîtier à un autre. `_restore_normalized(emu_id, base, zf, norm)` les
-recartographie sur la disposition locale — pour Ryujinx il résout le conteneur
-cible via `ryujinx.title_map()`, écrit les deux copies `0` (validée) et `1`
-(de travail), et refuse avec un message clair quand le jeu n'a pas encore de
-conteneur (« lancez le jeu une fois, puis réessayez »).
-`_yuzu_user_for(user_root, tid)` choisit le bon dossier de compte pour la
-disposition de la famille yuzu : le profil qui contient déjà le titre, sinon
-celui qui a le plus de sauvegardes — **et non** le premier par ordre
-alphabétique, qui est généralement le compte vide tout à zéro.
+Normalized members are what lets a save move between two different boxes.
+`_restore_normalized(emu_id, base, zf, norm)` remaps them onto this install's
+own layout — for Ryujinx it resolves the target container through
+`ryujinx.title_map()`, writes both `0` (committed) and `1` (working) copies,
+and refuses with a clear message when the game has no container yet
+("launch the game once, then retry"). `_yuzu_user_for(user_root, tid)` picks
+the right account directory for the yuzu-family layout: the profile that
+already holds the title, else the one with the most saves — **not** the first
+sorted, which is usually the empty all-zero account.
 
-## Sûreté de la restauration
+## Restore safety
 
-`upload_full()` est le chemin critique en sécurité.
-[Lisez le motif ici](06-securite-et-pieges.md#le-motif-de-validation-des-chemins)
-avant d'y toucher.
+`upload_full()` is the security-critical path.
+[Read the pattern here](06-security-and-traps.md#the-path-validation-pattern)
+before touching it.
 
-Les envois sont temporisés dans un `SpooledTemporaryFile` au-delà de 64 Mio —
-une sauvegarde RPCS3 complète ne doit jamais tenir dans la RAM du boîtier.
+Uploads spool to a `SpooledTemporaryFile` past 64 MiB — a full RPCS3 backup
+must never sit in the box's RAM.
 
-## Outillage côté PC
+## PC-side tooling
 
-`guide.py` contient les instructions « transférer vos sauvegardes depuis un
-PC » par émulateur, affichées dans l'interface, vérifiées contre les sources et
-la documentation de chaque émulateur. `tools/gamecore-save-export.py` (550 l.)
-est l'homologue autonome qui tourne sur le PC et pousse vers le boîtier ; il
-est servi sur `/tools`.
+`guide.py` holds the per-emulator "transfer your saves from a PC" instructions
+rendered in the UI, verified against each emulator's own source and docs.
+`tools/gamecore-save-export.py` (550 l.) is the standalone counterpart that
+runs on the PC and pushes to the box; it is served at `/tools`.

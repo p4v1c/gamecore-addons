@@ -59,4 +59,4 @@ Ports 8770–8799 are reserved for addons; each addon declares its own in `addon
 Copy `addons/_template/` and read [docs/CREATING_AN_ADDON.md](docs/CREATING_AN_ADDON.md).
 For how the whole thing fits together — the model, the registry, the install
 contract, what each addon does internally and the traps — see
-[docs/architecture/](docs/architecture/) (in French).
+[docs/architecture/](docs/architecture/).

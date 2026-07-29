@@ -429,6 +429,38 @@ def test_backups_section():
                       for p in (HOME / ".config/rpcs3").iterdir()))
 
 
+def test_entry_id_dot_is_rejected():
+    """A '.' entry id used to resolve to the collection directory itself.
+
+    PurePosixPath(".").parts is empty, so is_absolute() was false and there was
+    no ".." to find; joinpath(*()) then returned cdir, and relative_to(cdir)
+    succeeded trivially. DELETE ?id=0/. backed up and rmtree'd the whole
+    collection — and for mgba that collection is the ROM directory.
+    """
+    print("Entry id containment")
+    coll = GC / "emu/mgba"
+    before = sorted(p.name for p in coll.iterdir())
+
+    for bad in ("0/.", "0/./", "0/././.", "0/.//."):
+        r = client.delete(f"/api/saves/mgba?id={bad}")
+        check(f"delete id={bad!r} refused", r.status_code == 400, f"{r.status_code} {r.text}")
+
+    check("collection directory still there", coll.is_dir())
+    check("collection contents untouched", sorted(p.name for p in coll.iterdir()) == before)
+
+    # The same resolver backs these, so they must refuse it too.
+    check("download id='0/.' refused",
+          client.get("/api/saves/mgba/download", params={"id": "0/."}).status_code == 400)
+    check("restore-backup id='0/.' refused",
+          client.post("/api/backups/mgba/restore", params={"id": "0/."}).status_code == 400)
+    check("delete-backup id='0/.' refused",
+          client.request("DELETE", "/api/backups/mgba", params={"id": "0/."}).status_code == 400)
+
+    # A real entry still resolves.
+    r = client.get("/api/saves/mgba/download?id=0/Golden Sun.sav")
+    check("a genuine entry still works", r.status_code == 200, f"{r.status_code} {r.text}")
+
+
 def test_backup_pruning():
     print("Backup pruning")
     sav = GC / "emu/mgba/Golden Sun.sav"
@@ -455,6 +487,7 @@ if __name__ == "__main__":
     test_zip_roundtrip()
     test_card_game_zip()
     test_backups_section()
+    test_entry_id_dot_is_rejected()
     test_backup_pruning()
     print()
     if FAILURES:

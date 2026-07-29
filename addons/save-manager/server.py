@@ -151,6 +151,16 @@ def _resolve_entry(emu_id: str, entry_id: str) -> tuple[Path, Path, dict]:
         raise HTTPException(400, "bad entry id")
     cdir, col = _collection_dir(emu_id, int(m.group(1)))
     rel = PurePosixPath(m.group(2))
+    # `not rel.parts` is the one that matters — same guard upload() already has.
+    # PurePosixPath(".").parts is the empty tuple, so a "." entry id sailed past
+    # both of the other checks (nothing is absolute, no ".." to find),
+    # joinpath(*()) handed back cdir itself, and relative_to(cdir) trivially
+    # succeeded. DELETE ?id=0/. therefore backed up and rmtree'd the entire
+    # collection. For mgba and melonDS that is worse than it sounds: catalog.py
+    # gives them collections with an empty subpath, so the "collection" is the
+    # ROM directory.
+    if not rel.parts:
+        raise HTTPException(400, "bad entry id")
     if rel.is_absolute() or ".." in rel.parts:
         raise HTTPException(403, "path outside the save directory")
     target = cdir.joinpath(*rel.parts)
@@ -158,6 +168,10 @@ def _resolve_entry(emu_id: str, entry_id: str) -> tuple[Path, Path, dict]:
         target.resolve().relative_to(cdir.resolve())
     except ValueError:
         raise HTTPException(403, "path outside the save directory")
+    # Defence in depth: whatever the id looked like, an entry is something
+    # *inside* a collection, never the collection itself.
+    if target.resolve() == cdir.resolve():
+        raise HTTPException(400, "bad entry id")
     return target, cdir, col
 
 

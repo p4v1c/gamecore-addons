@@ -83,7 +83,7 @@ Four things in there are the contract, not decoration:
 | `tool` | one-shot script / system tweak, no service | no |
 
 Every installed addon of any type lands in the registry
-(`$GAMECORE_PATH/config/addons.json`) and shows on the TV's Addons screen.
+(`$GAMECORE_DATA/config/addons.json`) and shows on the TV's Addons screen.
 Only `web` addons get a link.
 
 ## Ports
@@ -127,7 +127,9 @@ The systemd unit written by `install.sh` provides:
 
 | Variable | Meaning |
 |---|---|
-| `GAMECORE_PATH` | the core's root — how the addon finds `config/`, `emu/`, `assets/` |
+| `GAMECORE_PATH` | the installation — bundled binaries, `lib/`. **Read only.** |
+| `GAMECORE_DATA` | the player's data — `config/`, `emu/`, `assets/overlays/`. Writable. |
+| `ADDON_DATA_DIR` | the addon's own corner, `$GAMECORE_DATA/addons/<name>` |
 | `ADDON_PORT` | the port to bind |
 | `ADDON_BASE` | the path prefix → `root_path` |
 

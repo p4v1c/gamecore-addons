@@ -1,8 +1,9 @@
 {
+  "api": 1,
   "name": "_template",
   "label": "Template",
   "description": "Copy this directory to start a new addon. Directories starting with _ are ignored by gamecore-addon.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "web",
   "default": false,
   "service": "user",

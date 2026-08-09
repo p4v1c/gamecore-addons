@@ -22,9 +22,9 @@ The addon does not keep its own idea of where ROMs live. It reads the core's:
 
 | Function | Role |
 |---|---|
-| `systems()` | parse `$GAMECORE_PATH/config/systems.json` |
+| `systems()` | parse `$GAMECORE_DATA/config/systems.json` |
 | `get_system(system_id)` | one entry, 404 otherwise |
-| `roms_path_of(system)` | resolve `romsPath` against `GAMECORE_PATH` |
+| `roms_path_of(system)` | resolve `romsPath` against `GAMECORE_DATA` — the data root, like the core's `paths.resolve_data_path()` |
 
 So a system added on the TV appears here with no addon change. The trade-off
 is a mirrored copy of the scanning logic:

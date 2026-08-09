@@ -19,6 +19,9 @@ addons/<name>/
 
 ```json
 {
+  "api": 1,                       // REQUIRED — "this addon writes to GAMECORE_DATA,
+                                  // never to GAMECORE_PATH". install/update refuse
+                                  // an addon without it. Add it last (see Rules).
   "name": "rom-manager",          // = directory name, [a-z0-9-]
   "label": "ROM Manager",         // shown in nav + Addons screen
   "description": "…",
@@ -40,7 +43,10 @@ The manager runs them with these variables in the environment:
 | var | meaning |
 |-----|---------|
 | `USER_NAME`     | user the addon runs as |
-| `GAMECORE_PATH` | core install dir (default `/opt/GameCore`) |
+| `GAMECORE_PATH` | core install dir (default `/opt/GameCore`) — **read only** |
+| `GAMECORE_DATA` | player data dir (default `$GAMECORE_PATH`) — writable |
+| `ADDON_DATA_DIR` | your writable corner, `$GAMECORE_DATA/addons/<name>`, created before this script runs |
+| `GAMECORE_ADDON_API` | api version the manager speaks (`1`) |
 | `GAMECORE_BACKEND_PORT` | core API port (default `8765`) — bake it into your unit if you call the core |
 | `ADDON_DIR`     | this addon's directory in the checkout (= runtime dir) |
 | `OFFLINE`       | `1` when installing from the GameCore OS ISO without network |
@@ -48,8 +54,16 @@ The manager runs them with these variables in the environment:
 
 Rules:
 
+- **Write to `$GAMECORE_DATA` / `$ADDON_DATA_DIR`, never to `$GAMECORE_PATH`.**
+  The install root is becoming a read-only mount and is handed to you for
+  reading only. See the code/data section in the repo README for how to tell a
+  data path from a code path — and note that your `install.sh` must pass **both**
+  roots to your systemd unit, or the service will never see them.
+- **Declare `"api": 1` in `addon.json`** once the above is true of your addon.
+  Without it, `gamecore-addon install` and `update` refuse it by name. Add it
+  last, after the paths are right: it states conformance, it does not grant it.
 - **Idempotent** — `update` re-runs `install.sh` on the pulled checkout.
-- **Never touch the registry** (`config/addons.json`) — the manager owns it.
+- **Never touch the registry** (`$GAMECORE_DATA/config/addons.json`) — the manager owns it.
 - **No network when `OFFLINE=1`** — ship everything in the repo or declare it
   in `offline_assets` (provided under `PAYLOAD_DIR`).
 - Service name convention: `gamecore-addon-<name>.service` (user unit unless

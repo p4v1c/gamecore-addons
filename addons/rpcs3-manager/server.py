@@ -6,6 +6,11 @@ options as the RPCS3 UI), and patch management (imported_patch.yml +
 patch_config.yml). Every write is preceded by a timestamped .bak and all
 YAML goes through the string-preserving ryaml module — RPCS3 files contain
 scalars ("16:9", "01.10") that a naive round-trip would corrupt.
+
+This addon reads from both roots, and which one is not interchangeable:
+systems.json is the player's ($GAMECORE_DATA), the bundled RPCS3 binary is the
+release's ($GAMECORE_PATH/lib/rpcs3). Everything it writes lands in RPCS3's own
+config directory under $HOME, outside both roots.
 """
 import asyncio
 import datetime
@@ -30,6 +35,15 @@ from schema import SCHEMA, FIELD_BY_ID
 
 ADDON_DIR = Path(__file__).parent
 GAMECORE_PATH = Path(os.environ.get("GAMECORE_PATH", "/opt/GameCore"))
+# Two roots, mirroring the core's backend/services/paths.py: GAMECORE_PATH is
+# the installation (code shipped by the release, becoming a read-only mount),
+# GAMECORE_DATA is what the player owns. This addon reads from both, and the
+# split is not cosmetic — see _declared_path() and rpcs3_cmd() below.
+#
+# The fallback keeps a box that has not taken the P3 OTA — whose systemd unit
+# passes only GAMECORE_PATH — resolving to the byte-identical location it used
+# before. TEMPORARY: drop it once P12 has moved the data.
+GAMECORE_DATA = Path(os.environ.get("GAMECORE_DATA") or GAMECORE_PATH)
 PORT = int(os.environ.get("ADDON_PORT", 8771))
 _SERIAL_RE = re.compile(r"^[A-Z0-9]{9}$")
 RPCS3_FLATPAK = "net.rpcs3.RPCS3"
@@ -40,7 +54,9 @@ def _declared_path() -> str:
     native launcher path). "" when unreadable/absent — the addon then falls
     back to what exists on disk, so it still works off-box."""
     try:
-        systems = json.loads((GAMECORE_PATH / "config" / "systems.json").read_text())
+        # systems.json is data: the player edits it from the UI, and the core
+        # reads it through paths.config_dir(). It moves with GAMECORE_DATA.
+        systems = json.loads((GAMECORE_DATA / "config" / "systems.json").read_text())
         return next((s.get("path", "") for s in systems if s.get("id") == "rpcs3"), "")
     except (OSError, ValueError):
         return ""
@@ -80,6 +96,12 @@ def rpcs3_cmd(extra_env: dict | None = None):
         return (["flatpak", "run"]
                 + [f"--env={k}={v}" for k, v in (extra_env or {}).items()]
                 + [RPCS3_FLATPAK])
+    # Deliberately GAMECORE_PATH, not GAMECORE_DATA: this is the RPCS3 binary
+    # shipped with the install. It is code — it arrives with the release and the
+    # player never edits it — so it stays on the read-only side. `lib/` has no
+    # entry in the core's paths._LAYOUT for exactly that reason. Moving it to
+    # the data root would look tidy and break the launcher on every box that
+    # sets the two roots apart, because nothing would ever put a binary there.
     native = GAMECORE_PATH / "lib" / "rpcs3"
     return [str(native)] if native.exists() else None
 

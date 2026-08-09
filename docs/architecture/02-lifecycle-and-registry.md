@@ -29,7 +29,7 @@ sequenceDiagram
 
     u->>cli: install save-manager
     cli->>cli: clone or git pull $GCA_REPO_DIR
-    cli->>sh: run with ADDON_DIR, GAMECORE_PATH, PAYLOAD_DIR, OFFLINE
+    cli->>sh: run with ADDON_DIR, GAMECORE_PATH, GAMECORE_DATA,<br/>ADDON_DATA_DIR, PAYLOAD_DIR, OFFLINE
     sh->>sh: python3 -m venv .venv
     alt OFFLINE=1
         sh->>sh: pip install --no-index --find-links $PAYLOAD_DIR/wheels
@@ -47,7 +47,10 @@ Environment the CLI hands to `install.sh`:
 | Variable | Meaning |
 |---|---|
 | `ADDON_DIR` | this addon's directory in the checkout |
-| `GAMECORE_PATH` | the core's root |
+| `GAMECORE_PATH` | the installation — read only, becoming a read-only mount |
+| `GAMECORE_DATA` | the player's data — write here (default: `$GAMECORE_PATH`) |
+| `ADDON_DATA_DIR` | the addon's own corner, created before the hook runs |
+| `GAMECORE_ADDON_API` | the api version the manager speaks (`1`) |
 | `PAYLOAD_DIR` | where offline assets were unpacked |
 | `OFFLINE` | `1` → install wheels from `PAYLOAD_DIR/wheels`, no PyPI |
 

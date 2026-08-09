@@ -7,6 +7,13 @@ PORT=8771                        # keep in sync with addon.json
 UNIT="gamecore-addon-${ADDON_NAME}.service"
 UNIT_DIR="${HOME}/.config/systemd/user"
 
+# gamecore-addon (api 1) hands us both roots and our own writable corner. The
+# defaults keep `bash install.sh` working by hand on a pre-P3 box, where only
+# GAMECORE_PATH is set — TEMPORARY, same lifetime as the fallback in server.py.
+GAMECORE_DATA="${GAMECORE_DATA:-${GAMECORE_PATH}}"
+ADDON_DATA_DIR="${ADDON_DATA_DIR:-${GAMECORE_DATA}/addons/${ADDON_NAME}}"
+mkdir -p "${ADDON_DATA_DIR}"
+
 echo "[${ADDON_NAME}] Python venv + dependencies"
 python3 -m venv "${ADDON_DIR}/.venv"
 if [[ "${OFFLINE:-0}" == "1" ]]; then
@@ -31,6 +38,8 @@ After=network-online.target
 [Service]
 Type=simple
 Environment=GAMECORE_PATH=${GAMECORE_PATH}
+Environment=GAMECORE_DATA=${GAMECORE_DATA}
+Environment=ADDON_DATA_DIR=${ADDON_DATA_DIR}
 Environment=ADDON_PORT=${PORT}
 Environment=ADDON_BASE=/rpcs3
 WorkingDirectory=${ADDON_DIR}

@@ -2,9 +2,19 @@
 
 Browser drag & drop ROM uploads, per system. Extracted from the core's
 backend/routers/roms.py: same endpoints, same UX, own port. Reads the
-systems catalogue from $GAMECORE_PATH/config/systems.json and writes ROMs
-under $GAMECORE_PATH; after an upload it notifies the core
+systems catalogue from $GAMECORE_DATA/config/systems.json and writes ROMs
+under $GAMECORE_DATA; after an upload it notifies the core
 (POST /api/addons/notify → WebSocket rom_uploaded) so the TV UI refreshes.
+
+Two roots, mirroring the core's backend/services/paths.py:
+
+  GAMECORE_PATH  the installation — code shipped by the release, read-only.
+  GAMECORE_DATA  the player's data — systems.json and the ROMs themselves.
+
+This addon touches only the data side. Every path it resolves is something
+the player owns, so nothing here may be joined onto GAMECORE_PATH: that root
+becomes a read-only mount, and a ROM written under it would fail an upload on
+a box with nobody in front of it.
 """
 import fnmatch
 import json
@@ -22,7 +32,12 @@ from fastapi.staticfiles import StaticFiles
 
 ADDON_DIR = Path(__file__).parent
 GAMECORE_PATH = Path(os.environ.get("GAMECORE_PATH", "/opt/GameCore"))
-SYSTEMS_FILE = GAMECORE_PATH / "config" / "systems.json"
+# Falls back to GAMECORE_PATH so a box that has not yet taken the P3 OTA — where
+# the systemd unit still passes only GAMECORE_PATH — resolves every path to the
+# byte-identical location it used before. TEMPORARY: drop the fallback once P12
+# has moved the data and no supported box sets one variable without the other.
+GAMECORE_DATA = Path(os.environ.get("GAMECORE_DATA") or GAMECORE_PATH)
+SYSTEMS_FILE = GAMECORE_DATA / "config" / "systems.json"
 PORT = int(os.environ.get("ADDON_PORT", 8770))
 CORE_PORT = int(os.environ.get("GAMECORE_BACKEND_PORT", 8765))
 CORE_NOTIFY = f"http://127.0.0.1:{CORE_PORT}/api/addons/notify"
@@ -110,7 +125,13 @@ def roms_path_of(system: dict) -> Path | None:
     if not raw:
         return None
     p = Path(raw)
-    return p if p.is_absolute() else GAMECORE_PATH / p
+    # `romsPath` is relative in systems.json ("emu/duckstation/"), and this is
+    # the one place that decides what it is relative TO. It is the DATA root:
+    # same call the core makes in paths.resolve_data_path(). Resolving it under
+    # GAMECORE_PATH would drop uploads into a directory the scanner stops
+    # reading the day P12 moves the library — the player would upload into
+    # nothing, with no error to show for it.
+    return p if p.is_absolute() else GAMECORE_DATA / p
 
 
 async def notify_core(event: str, data: dict) -> None:

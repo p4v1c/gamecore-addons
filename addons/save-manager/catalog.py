@@ -132,13 +132,29 @@ CATALOG = {
     ]},
     # Left on GC, not GC_DATA, and this one is a genuine exception. Xenia Canary
     # is portable: it keeps its saves in content/ *next to its own exe*, and the
-    # exe ships with the release under lib/. So a data directory physically sits
-    # inside the code root, which the core has not resolved either — `lib/` has
-    # no entry in paths._LAYOUT. Pointing this at GC_DATA would make the addon
-    # look for saves where nothing ever writes them: every Xbox 360 save would
-    # vanish from the UI, and "no saves found" reads exactly like "no saves".
-    # Reading where the files actually are is the only honest answer until the
-    # core decides what a portable emulator does under a read-only root.
+    # exe lives under lib/ in the code root. So a data directory physically sits
+    # inside the code root. Pointing this at GC_DATA would make the addon look
+    # for saves where nothing ever writes them: every Xbox 360 save would vanish
+    # from the UI, and "no saves found" reads exactly like "no saves".
+    #
+    # The core has now measured the boundary this used to have to guess at
+    # (GamecoreRenew#36). Two corrections to what this comment used to claim,
+    # because both changed why the exception is right rather than whether:
+    #
+    #   · `lib/` does NOT ship with the release. It is in neither release
+    #     archive and `/lib/` is gitignored at the repo root — the provider
+    #     downloads into it on the box (`providers.py`, `ctx.gamecore_path /
+    #     spec["dest"]`). So no OTA ever refreshes or repairs what is in here.
+    #   · the core's launcher reaches the exe through the backend's working
+    #     directory (`WorkingDirectory=$GAMECORE_PATH`), not through any
+    #     resolver. That is now pinned by a `@GAMECORE_PATH@` token in the pack
+    #     instead of being left to the cwd.
+    #
+    # Both point the same way: `lib/` is code, it stays on GC, and this base is
+    # right. What is NOT settled is where xenia's content/ ends up — if the core
+    # takes option 2 in #36 and relocates it to the data root, this entry moves
+    # with it. Until then, saves live in the code root and _backup() writes its
+    # copies there too, which is the documented cost of the exception.
     "xenia": {"label": "Xbox 360", "bases": [GC / "lib/xenia"], "collections": [
         # Canary is portable on Windows builds (also under Wine): saves live in
         # content/<profile XUID>/<TitleID>/ next to the exe. That per-title dir

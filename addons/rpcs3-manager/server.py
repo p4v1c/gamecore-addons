@@ -96,12 +96,18 @@ def rpcs3_cmd(extra_env: dict | None = None):
         return (["flatpak", "run"]
                 + [f"--env={k}={v}" for k, v in (extra_env or {}).items()]
                 + [RPCS3_FLATPAK])
-    # Deliberately GAMECORE_PATH, not GAMECORE_DATA: this is the RPCS3 binary
-    # shipped with the install. It is code — it arrives with the release and the
-    # player never edits it — so it stays on the read-only side. `lib/` has no
-    # entry in the core's paths._LAYOUT for exactly that reason. Moving it to
-    # the data root would look tidy and break the launcher on every box that
-    # sets the two roots apart, because nothing would ever put a binary there.
+    # Deliberately GAMECORE_PATH, not GAMECORE_DATA: this is the RPCS3 binary.
+    # It is code — the player never edits it — so it stays on the read-only
+    # side. Moving it to the data root would look tidy and break the launcher on
+    # every box that sets the two roots apart, because nothing would ever put a
+    # binary there.
+    #
+    # It does NOT "arrive with the release", which is what this comment used to
+    # say: `lib/` is in neither release archive and `/lib/` is gitignored at the
+    # core's repo root — the provider downloads into it on the box. The
+    # conclusion is unchanged, the reason is not, and the difference matters to
+    # whoever assumes an OTA can repair a corrupt binary in here. It cannot;
+    # re-running the provider is what does. Measured in GamecoreRenew#36.
     native = GAMECORE_PATH / "lib" / "rpcs3"
     return [str(native)] if native.exists() else None
 

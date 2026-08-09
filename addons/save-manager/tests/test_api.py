@@ -1,9 +1,19 @@
 """End-to-end API tests against a synthetic save tree — no emulator needed.
 
-Builds a fake HOME + GAMECORE_PATH in a temp dir (mgba flat saves, a
+Builds a fake HOME + two GameCore roots in a temp dir (mgba flat saves, a
 DuckStation per-game-title card, a PCSX2 multi-game card, a standalone Dolphin
 .gci, an RPCS3 savedata+trophy pair), then drives the FastAPI app in-process.
 Run with:  python tests/test_api.py     (needs fastapi + httpx installed)
+
+GAMECORE_PATH and GAMECORE_DATA are set to two *different* directories, which
+is the only configuration in which this suite proves anything about the split.
+On a real box GAMECORE_DATA defaults to GAMECORE_PATH, so both spellings work
+and a path joined onto the wrong root is invisible. Here the ROM/save tree is
+built under DATA only: any code still reaching for GAMECORE_PATH finds an empty
+directory and the check fails. See tests/test_paths.py for the direct assertion.
+
+The one deliberate exception is lib/xenia, built under the CODE root — see the
+comment on the xenia entry in catalog.py.
 """
 import io
 import os
@@ -20,9 +30,11 @@ _TMP = tempfile.TemporaryDirectory()
 ROOT = Path(_TMP.name)
 os.environ["GAMECORE_HOME"] = str(ROOT / "home")
 os.environ["GAMECORE_PATH"] = str(ROOT / "GameCore")
+os.environ["GAMECORE_DATA"] = str(ROOT / "userdata")
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared" / "py"))
 import test_memcard as cards  # noqa: E402 — synthetic card builders
 import memcard as mc          # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -30,7 +42,8 @@ import server                 # noqa: E402
 
 client = TestClient(server.app)
 HOME = ROOT / "home"
-GC = ROOT / "GameCore"
+GC = ROOT / "GameCore"      # the installation — code, read-only in production
+GCD = ROOT / "userdata"     # the player's data — ROMs, covers, systems.json
 FAILURES = []
 
 
@@ -57,7 +70,7 @@ def make_sfo(pairs: dict) -> bytes:
 
 def build_tree():
     # mgba — flat .sav/.ss0 next to the ROMs
-    d = GC / "emu/mgba"
+    d = GCD / "emu/mgba"
     d.mkdir(parents=True)
     (d / "Golden Sun.gba").write_bytes(b"ROM")
     (d / "Golden Sun.sav").write_bytes(b"S" * 512)
@@ -237,7 +250,7 @@ def test_zip_roundtrip():
     check("zip is base-relative", sorted(zf.namelist()) == ["Golden Sun.sav", "Golden Sun.ss0"])
 
     # destroy, then restore through upload-full
-    sav = GC / "emu/mgba/Golden Sun.sav"
+    sav = GCD / "emu/mgba/Golden Sun.sav"
     orig = sav.read_bytes()
     client.delete("/api/saves/mgba", params={"id": "0/Golden Sun.sav"})
     check("deleted", not sav.exists())
@@ -260,7 +273,7 @@ def test_zip_roundtrip():
     buf.seek(0)
     r = client.post("/api/saves/mgba/upload", params={"collection": 0},
                     files={"file": ("saves.zip", buf)})
-    check("flat-zip root stripped", r.status_code == 200 and (GC / "emu/mgba/Metroid.sav").is_file(), r.text)
+    check("flat-zip root stripped", r.status_code == 200 and (GCD / "emu/mgba/Metroid.sav").is_file(), r.text)
 
     # upload-full refuses paths outside the save collections
     buf = io.BytesIO()
@@ -388,7 +401,7 @@ def test_backups_section():
     r = client.get("/api/backups/mgba")
     check("backups listed", r.status_code == 200 and len(r.json()) >= 1)
 
-    sav = GC / "emu/mgba/Golden Sun.sav"
+    sav = GCD / "emu/mgba/Golden Sun.sav"
     orig = sav.read_bytes()
     client.delete("/api/saves/mgba", params={"id": "0/Golden Sun.sav"})
     baks = client.get("/api/backups/mgba").json()
@@ -438,7 +451,7 @@ def test_entry_id_dot_is_rejected():
     collection — and for mgba that collection is the ROM directory.
     """
     print("Entry id containment")
-    coll = GC / "emu/mgba"
+    coll = GCD / "emu/mgba"
     before = sorted(p.name for p in coll.iterdir())
 
     for bad in ("0/.", "0/./", "0/././.", "0/.//."):
@@ -463,7 +476,7 @@ def test_entry_id_dot_is_rejected():
 
 def test_backup_pruning():
     print("Backup pruning")
-    sav = GC / "emu/mgba/Golden Sun.sav"
+    sav = GCD / "emu/mgba/Golden Sun.sav"
     for i in range(6):
         server._backup(sav)
         os.utime(sav)                     # distinct mtimes not needed; names differ by ts
@@ -474,8 +487,39 @@ def test_backup_pruning():
     check("at most 3 backups kept", len(baks) <= 3, str(len(baks)))
 
 
+def test_two_roots():
+    """The data root is honoured and the code root is not silently substituted.
+
+    Everything above this point would still pass if catalog.py resolved the
+    save tree under GAMECORE_PATH *and* the harness built it there — the two
+    move together. These checks pin the direction: with the roots apart, a data
+    path must land under DATA and must not be reachable under PATH.
+    """
+    print("Two roots")
+    import catalog
+    check("roots really differ", GC.resolve() != GCD.resolve(),
+          "the whole suite proves nothing otherwise")
+    check("covers under DATA", catalog.COVERS == GCD / "emu" / "covers", str(catalog.COVERS))
+    check("covers NOT under PATH", GC.resolve() not in catalog.COVERS.resolve().parents,
+          str(catalog.COVERS))
+    check("roms under DATA", catalog.ROMS == GCD / "emu", str(catalog.ROMS))
+
+    base = catalog.resolve_base("mgba")
+    check("mgba base resolved under DATA", base == GCD / "emu/mgba", str(base))
+    check("mgba base NOT under PATH", base is not None
+          and GC.resolve() not in base.resolve().parents, str(base))
+    # The same tree does not exist under the code root, so a regression that
+    # rejoins onto GAMECORE_PATH loses the saves outright rather than mildly.
+    check("no mgba tree under PATH at all", not (GC / "emu/mgba").exists())
+
+    # …and the deliberate exception, guarded so nobody "finishes" the migration.
+    xen = catalog.resolve_base("xenia")
+    check("xenia base stays under PATH", xen == GC / "lib/xenia", str(xen))
+
+
 if __name__ == "__main__":
     build_tree()
+    test_two_roots()
     test_listing()
     test_duckstation_card()
     test_pcsx2_shared_card()

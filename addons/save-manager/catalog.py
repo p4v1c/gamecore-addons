@@ -47,9 +47,16 @@ import sfo
 
 # GAMECORE_HOME lets tests (and unusual setups) point the scan somewhere else.
 HOME = Path(os.environ.get("GAMECORE_HOME") or Path.home())
+# Two roots, mirroring the core's backend/services/paths.py.
+#   GC       the installation — code shipped by the release, read-only.
+#   GC_DATA  the player's data — ROMs, covers, systems.json.
+# The fallback keeps a box that has not taken the P3 OTA — whose systemd unit
+# passes only GAMECORE_PATH — resolving to the byte-identical location it used
+# before. TEMPORARY: drop it once P12 has moved the data.
 GC = Path(os.environ.get("GAMECORE_PATH", "/opt/GameCore"))
-COVERS = GC / "emu" / "covers"
-ROMS = GC / "emu"
+GC_DATA = Path(os.environ.get("GAMECORE_DATA") or GC)
+COVERS = GC_DATA / "emu" / "covers"
+ROMS = GC_DATA / "emu"
 
 
 def C(subpath, mode, kind, exts=(), group="none", glob="*"):
@@ -58,11 +65,11 @@ def C(subpath, mode, kind, exts=(), group="none", glob="*"):
 
 
 CATALOG = {
-    "mgba": {"label": "Game Boy Advance", "bases": [GC / "emu/mgba"], "collections": [
+    "mgba": {"label": "Game Boy Advance", "bases": [GC_DATA / "emu/mgba"], "collections": [
         C("", "files", "save", [".sav", ".srm"], "rom"),
         C("", "files", "state", [f".ss{i}" for i in range(10)], "rom"),
     ]},
-    "melonds": {"label": "Nintendo DS", "bases": [GC / "emu/melonds"], "collections": [
+    "melonds": {"label": "Nintendo DS", "bases": [GC_DATA / "emu/melonds"], "collections": [
         C("", "files", "save", [".sav", ".nvm"], "rom"),
         C("", "files", "state", [".mln"] + [f".ml{i}" for i in range(1, 9)], "rom"),
     ]},
@@ -123,6 +130,15 @@ CATALOG = {
         C("nand/user/save", "dirs", "save", (), "switch", glob="0000000000000000/*/*"),
         C("nand/user/save/cache", "dirs", "save", (), "shared"),
     ]},
+    # Left on GC, not GC_DATA, and this one is a genuine exception. Xenia Canary
+    # is portable: it keeps its saves in content/ *next to its own exe*, and the
+    # exe ships with the release under lib/. So a data directory physically sits
+    # inside the code root, which the core has not resolved either — `lib/` has
+    # no entry in paths._LAYOUT. Pointing this at GC_DATA would make the addon
+    # look for saves where nothing ever writes them: every Xbox 360 save would
+    # vanish from the UI, and "no saves found" reads exactly like "no saves".
+    # Reading where the files actually are is the only honest answer until the
+    # core decides what a portable emulator does under a read-only root.
     "xenia": {"label": "Xbox 360", "bases": [GC / "lib/xenia"], "collections": [
         # Canary is portable on Windows builds (also under Wine): saves live in
         # content/<profile XUID>/<TitleID>/ next to the exe. That per-title dir
@@ -182,7 +198,7 @@ def _declared_flatpak(emu_id: str):
     native, None when it doesn't say (absent, unreadable, or no such id)."""
     import json
     try:
-        systems = json.loads((GC / "config" / "systems.json").read_text())
+        systems = json.loads((GC_DATA / "config" / "systems.json").read_text())
         path = next((s.get("path", "") for s in systems if s.get("id") == emu_id), "")
     except (OSError, ValueError):
         return None

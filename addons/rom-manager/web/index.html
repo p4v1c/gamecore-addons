@@ -691,21 +691,28 @@ async function omLoadSlots() {
   const box = document.getElementById('om-slots');
   box.innerHTML = '<div class="om-hint">Reading…</div>';
   document.getElementById('om-hint').textContent = '';
-  let slots;
+  let slots, note = '';
   try {
     const res = await fetch(`api/overlays/${encodeURIComponent(activeEmu.id)}/slots`);
     if (!res.ok) throw new Error(await omDetail(res));
-    slots = (await res.json()).slots || [];
+    const body = await res.json();
+    slots = body.slots || [];
+    note = body.note || '';
   } catch (e) {
     box.innerHTML = '';
     document.getElementById('om-hint').textContent = String(e.message || e);
     return;
   }
   box.innerHTML = slots.map(omSlotCard).join('');
-  // The hint only earns its place when there is something to explain.
-  document.getElementById('om-hint').textContent = slots.length > 1
-    ? `${activeEmu.platform} runs ${slots.length - 1} consoles — each may have its own frame`
-    : '';
+  // The hint only earns its place when there is something to explain. A core
+  // that predates per-console bezels is exactly that: the player sees one slot
+  // where another box shows four, and without this line there is nothing to
+  // say why — they would read it as the feature being broken.
+  document.getElementById('om-hint').textContent = note
+    ? note
+    : slots.length > 1
+      ? `${activeEmu.platform} runs ${slots.length - 1} consoles — each may have its own frame`
+      : '';
 }
 
 /** The core answers a refusal with a sentence; a generic "failed" wastes it. */

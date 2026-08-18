@@ -190,6 +190,41 @@ try:
 finally:
     httpx.AsyncClient = _real
 
+print("A core that predates per-console bezels")
+# An addon updates on its own `git pull`, the core updates by OTA. Between the
+# two, this addon runs against a core with no /slots endpoint — the normal
+# state of a box mid-update. It must still manage the system bezel, or the
+# update makes the screen worse than it was.
+
+
+class _OldCore(httpx.AsyncBaseTransport):
+    async def handle_async_request(self, request):
+        return httpx.Response(404, json={"detail": "Not Found"}, request=request)
+
+
+class _PatchedOld(_real):
+    def __init__(self, *a, **kw):
+        kw["transport"] = _OldCore()
+        super().__init__(*a, **kw)
+
+
+(DATA / "assets" / "overlays").mkdir(parents=True)
+(DATA / "assets" / "overlays" / "mgba.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+after_seed = tree(DATA)
+
+httpx.AsyncClient = _PatchedOld
+try:
+    body = client.get("/api/overlays/mgba/slots").json()
+    check("an old core still answers 200", body.get("legacy_core") is True, str(body)[:120])
+    check("only the system slot is offered",
+          [s["level"] for s in body["slots"]] == ["system"], str(body["slots"]))
+    check("the system bezel on disk is seen", body["slots"][0]["present"] is True)
+    check("no hole is invented", body["slots"][0]["hole"] is None)
+    check("the player is told why", "predates" in body.get("note", ""))
+    check("still nothing written", tree(DATA) == after_seed)
+finally:
+    httpx.AsyncClient = _real
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} check(s) FAILED: " + ", ".join(FAILURES))

@@ -65,6 +65,18 @@ check("absolute romsPath left alone", absolute == Path("/mnt/usb/roms/psx"), str
 check("empty romsPath → None", server.roms_path_of({"romsPath": ""}) is None)
 check("missing romsPath → None", server.roms_path_of({}) is None)
 
+print("Overlays are READ from the data root")
+# Only read: the PNGs are written by the core through the loopback relay, and
+# `api: 1` forbids this addon writing outside its own directory. But reading
+# them from the wrong root is the quiet half of the same bug — the screen would
+# report "no bezel" for every system on the day the data moves, with nothing to
+# explain it.
+check("overlays dir under DATA", under(server.OVERLAYS_DIR, DATA), str(server.OVERLAYS_DIR))
+check("overlays dir NOT under PATH", not under(server.OVERLAYS_DIR, CODE),
+      str(server.OVERLAYS_DIR))
+check("overlays dir keeps its subpath",
+      server.OVERLAYS_DIR == DATA / "assets" / "overlays", str(server.OVERLAYS_DIR))
+
 print("Fallback for a box that has not taken the P3 OTA")
 # The systemd unit there passes GAMECORE_PATH only. Every path must resolve to
 # exactly where it did before — the split must cost nothing until P12 moves it.
@@ -74,6 +86,8 @@ check("DATA falls back to PATH", server.GAMECORE_DATA == CODE, str(server.GAMECO
 check("systems.json back under PATH", under(server.SYSTEMS_FILE, CODE), str(server.SYSTEMS_FILE))
 legacy = server.roms_path_of({"romsPath": "emu/duckstation"})
 check("relative romsPath back under PATH", legacy == CODE / "emu" / "duckstation", str(legacy))
+check("overlays dir back under PATH", server.OVERLAYS_DIR == CODE / "assets" / "overlays",
+      str(server.OVERLAYS_DIR))
 
 # An empty GAMECORE_DATA must not resolve every path to "/" — `or` not `get`.
 os.environ["GAMECORE_DATA"] = ""

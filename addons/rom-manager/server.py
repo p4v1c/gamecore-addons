@@ -368,6 +368,9 @@ async def relay(method: str, path: str, *, body: bytes | None = None,
                     media_type=r.headers.get("content-type"))
 
 
+OVERLAYS_DIR = GAMECORE_DATA / "assets" / "overlays"
+
+
 @app.get("/api/overlays/{system_id}/slots")
 async def overlay_slots(system_id: str):
     """Every bezel this system can have, filled or not.
@@ -376,9 +379,52 @@ async def overlay_slots(system_id: str):
     drops a PNG for one console of mGBA and is shown nothing about the other
     two cannot tell whether the upload took, and from a browser a silent
     success and a silent failure are the same picture.
+
+    Answered by the core, because the hole is measured out of the PNG's alpha
+    channel and a second decoder here would be a second set of numbers to keep
+    in agreement. The one thing handled locally is a core that has never heard
+    of this endpoint — see below.
     """
-    get_system(system_id)
-    return await relay("GET", f"/{system_id}/slots")
+    system = get_system(system_id)
+    r = await relay("GET", f"/{system_id}/slots")
+    if r.status_code == 404:
+        # An addon updates on its own `git pull`; the core updates by OTA. So
+        # the two versions are independent, and this addon WILL run against a
+        # core that predates per-console bezels — that is the normal state of a
+        # box between the two updates, not an edge case.
+        #
+        # Falling back to the system slot alone is the honest answer: such a
+        # core genuinely cannot resolve a console bezel, so offering the slots
+        # would be offering uploads that 404. The screen then behaves exactly
+        # as it did before this version, which is the point.
+        return legacy_slots(system_id, system)
+    return r
+
+
+def legacy_slots(system_id: str, system: dict) -> dict:
+    """The system slot alone, for a core without /slots.
+
+    `present` is read off the disk — reading the player's data is fine, it is
+    WRITING outside the addon's own directory that `api: 1` forbids. The hole
+    is left null rather than guessed: measuring it means decoding the PNG's
+    alpha, the core owns that, and a number invented here would be a second
+    answer to a question that already has one.
+    """
+    png = OVERLAYS_DIR / f"{system_id}.png"
+    return {
+        "system_id": system_id,
+        "legacy_core": True,
+        "note": ("This box's GameCore backend predates per-console bezels. "
+                 "Update the box to give each console its own frame."),
+        "slots": [{
+            "level": "system", "console": None,
+            "label": system.get("label", system_id),
+            "filename": f"{system_id}.png",
+            "present": png.is_file(),
+            "asset": f"/assets/overlays/{system_id}.png" if png.is_file() else None,
+            "hole": None, "ratio": None,
+        }],
+    }
 
 
 @app.post("/api/overlays/{system_id}/consoles/{console_id}")

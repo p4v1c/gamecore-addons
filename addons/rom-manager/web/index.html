@@ -134,14 +134,32 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
 .om-close{background:none;border:none;color:var(--text2);cursor:pointer;font-size:22px;line-height:1;padding:0 4px;transition:color .15s}
 .om-close:hover{color:#fff}
 .om-body{padding:24px;display:flex;flex-direction:column;gap:20px}
-.om-preview{width:100%;aspect-ratio:16/9;border-radius:10px;border:1px solid var(--border);background:var(--surface2);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
-.om-preview img{width:100%;height:100%;object-fit:contain}
-.om-preview .om-none{color:var(--text2);font-size:13px;display:flex;flex-direction:column;align-items:center;gap:8px}
-.om-drop{border:2px dashed var(--border);border-radius:10px;padding:22px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--text2)}
-.om-drop:hover,.om-drop.hover{border-color:var(--emu-color,var(--accent));background:rgba(92,124,250,.05);color:var(--text)}
-.om-drop svg{opacity:.6}
-.om-drop input{display:none}
 .om-footer{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-top:1px solid var(--border)}
+/* One card per bezel slot. A pack that runs several machines gets several;
+   eleven of the thirteen get exactly one and look as they always did. */
+.om-slots{display:flex;flex-direction:column;gap:14px}
+.om-slot{border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;gap:14px;align-items:flex-start}
+.om-slot.empty{border-style:dashed}
+.om-slot-thumb{flex:0 0 128px;aspect-ratio:16/9;border-radius:8px;border:1px solid var(--border);background:var(--surface2);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.om-slot-thumb img{width:100%;height:100%;object-fit:contain}
+.om-slot-thumb .om-empty{color:var(--text2);font-size:11px;text-align:center;padding:4px}
+.om-slot-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.om-slot-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.om-slot-name{font-size:14px;font-weight:700;color:#fff}
+.om-badge{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:20px;border:1px solid}
+.om-badge.on{color:#8ce99a;border-color:rgba(140,233,154,.4);background:rgba(140,233,154,.08)}
+.om-badge.off{color:var(--text2);border-color:var(--border)}
+.om-badge.sys{color:var(--text2);border-color:var(--border)}
+.om-slot-meta{font-size:11px;color:var(--text2);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}
+.om-slot-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.om-mini{border:1px dashed var(--border);border-radius:8px;padding:7px 12px;cursor:pointer;font-size:12px;color:var(--text2);transition:border-color .2s,background .2s,color .2s}
+.om-mini:hover,.om-mini.hover{border-color:var(--emu-color,var(--accent));background:rgba(92,124,250,.06);color:var(--text)}
+.om-mini input{display:none}
+.om-rm{background:none;border:none;color:var(--danger);font-size:12px;cursor:pointer;padding:7px 4px}
+.om-rm:hover{text-decoration:underline}
+.om-slot-msg{font-size:12px;min-height:1em}
+.om-slot-msg.err{color:var(--danger)}
+.om-slot-msg.ok{color:#8ce99a}
 .om-hint{font-size:12px;color:var(--text2)}
 .btn-danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}
 .btn-danger:hover{background:var(--danger);color:#fff}
@@ -218,29 +236,14 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
       <button class="om-close" onclick="closeOverlayModal()">×</button>
     </div>
     <div class="om-body">
-      <div class="om-preview" id="om-preview">
-        <div class="om-none" id="om-none">
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 8h10M7 12h6"/></svg>
-          No overlay set
-        </div>
-        <img id="om-img" src="" alt="" style="display:none" onload="omImgLoaded()" onerror="omImgError()">
-      </div>
-      <label class="om-drop" id="om-drop"
-             ondragover="omDzOver(event,this)" ondragleave="omDzLeave(this)" ondrop="omDzDrop(event)">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="17 8 12 3 7 8"/>
-          <line x1="12" y1="3" x2="12" y2="15"/>
-        </svg>
-        <span style="font-size:13px;font-weight:600">Drop a PNG here or click to browse</span>
-        <span style="font-size:12px">Recommended: 1920×1080 PNG with transparent center</span>
-        <input type="file" accept="image/png,image/jpeg,image/webp" onchange="omFileInput(this)">
-      </label>
+      <div class="om-slots" id="om-slots"></div>
     </div>
     <div class="om-footer">
       <span class="om-hint" id="om-hint"></span>
       <div style="display:flex;gap:10px">
-        <button class="btn btn-danger" id="om-delete" onclick="deleteOverlay()" style="display:none">Remove</button>
+        <!-- Removal is per slot now: a pack with three consoles has three
+             bezels, and one button in the footer could only ever mean one of
+             them. -->
         <button class="btn btn-outline" onclick="closeOverlayModal()">Close</button>
       </div>
     </div>
@@ -661,71 +664,167 @@ function escHtml(s) {
 function escAttr(s) { return escHtml(String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")); }
 
 // ── Overlay modal ──────────────────────────────────────────────────────────────
+//
+// One card per bezel SLOT, not one preview. An emulator is sometimes several
+// machines — mGBA runs Game Boy, Game Boy Color and Game Boy Advance behind one
+// tile — and each may have its own frame, because their pictures are different
+// shapes (10:9 against 3:2). The empty slots are drawn too: dropping a PNG for
+// one console and being shown nothing about the others gives no way to tell a
+// silent success from a silent failure.
+//
+// Everything here goes through this addon's own /api/overlays passthrough. The
+// core owns assets/overlays and decides the filename; the addon never writes
+// there (api: 1). See docs/SECURITY.md rule 5.
+
 function openOverlayModal() {
   if (!activeEmu) return;
   document.getElementById('om-title').textContent = `Overlay — ${activeEmu.platform}`;
   document.getElementById('overlay-modal').classList.add('open');
-  omLoadPreview();
+  omLoadSlots();
 }
 
 function closeOverlayModal() {
   document.getElementById('overlay-modal').classList.remove('open');
 }
 
-function omLoadPreview() {
-  const img = document.getElementById('om-img');
-  img.src = `/assets/overlays/${activeEmu.id}.png?t=${Date.now()}`;
-  img.style.display = '';
-  document.getElementById('om-none').style.display = 'none';
+async function omLoadSlots() {
+  const box = document.getElementById('om-slots');
+  box.innerHTML = '<div class="om-hint">Reading…</div>';
   document.getElementById('om-hint').textContent = '';
+  let slots, note = '';
+  try {
+    const res = await fetch(`api/overlays/${encodeURIComponent(activeEmu.id)}/slots`);
+    if (!res.ok) throw new Error(await omDetail(res));
+    const body = await res.json();
+    slots = body.slots || [];
+    note = body.note || '';
+  } catch (e) {
+    box.innerHTML = '';
+    document.getElementById('om-hint').textContent = String(e.message || e);
+    return;
+  }
+  box.innerHTML = slots.map(omSlotCard).join('');
+  // The hint only earns its place when there is something to explain. A core
+  // that predates per-console bezels is exactly that: the player sees one slot
+  // where another box shows four, and without this line there is nothing to
+  // say why — they would read it as the feature being broken.
+  document.getElementById('om-hint').textContent = note
+    ? note
+    : slots.length > 1
+      ? `${activeEmu.platform} runs ${slots.length - 1} consoles — each may have its own frame`
+      : '';
 }
 
-function omImgLoaded() {
-  document.getElementById('om-none').style.display = 'none';
-  document.getElementById('om-img').style.display = '';
-  document.getElementById('om-delete').style.display = '';
-  document.getElementById('om-hint').textContent = `/assets/overlays/${activeEmu.id}.png`;
+/** The core answers a refusal with a sentence; a generic "failed" wastes it. */
+async function omDetail(res) {
+  try {
+    const body = await res.json();
+    if (body && body.detail) return body.detail;
+  } catch { /* not JSON — fall through */ }
+  return `Request failed (${res.status})`;
 }
 
-function omImgError() {
-  document.getElementById('om-img').style.display = 'none';
-  document.getElementById('om-none').style.display = '';
-  document.getElementById('om-delete').style.display = 'none';
-  document.getElementById('om-hint').textContent = 'No overlay configured for this emulator';
+function omSlotCard(s) {
+  const key   = s.console || '';
+  const id    = `om-slot-${key || 'system'}`;
+  const cache = Date.now();
+  // Root-absolute: Caddy routes /assets/* straight to the core, same origin.
+  const thumb = s.present
+    ? `<img src="/assets/overlays/${encodeURIComponent(s.filename)}?t=${cache}" alt="">`
+    : `<div class="om-empty">empty</div>`;
+  const badge = s.level === 'system'
+    ? `<span class="om-badge sys">all of ${escHtml(activeEmu.id)}</span>`
+    : `<span class="om-badge ${s.present ? 'on' : 'off'}">${s.present ? 'in place' : 'no bezel'}</span>`;
+  // The measured hole, because the ratio is the thing a frame can be wrong
+  // about: a 1:1 frame over a 3:2 console covers the game's edges.
+  const meta = s.present
+    ? `${escHtml(s.filename)} — hole ${s.hole.w}×${s.hole.h} (${escHtml(s.ratio)})`
+    : `${escHtml(s.filename)} — drop a PNG to create it`;
+  const remove = s.present && s.level === 'console'
+    ? `<button class="om-rm" onclick="omRemoveConsole('${escAttr(s.console)}')">Remove</button>`
+    : s.present
+      ? `<button class="om-rm" onclick="omRemoveSystem()">Remove</button>`
+      : '';
+
+  return `<div class="om-slot ${s.present ? '' : 'empty'}" id="${id}">
+    <div class="om-slot-thumb">${thumb}</div>
+    <div class="om-slot-main">
+      <div class="om-slot-head">
+        <span class="om-slot-name">${escHtml(s.label)}</span>${badge}
+      </div>
+      <div class="om-slot-meta">${meta}</div>
+      <div class="om-slot-actions">
+        <label class="om-mini"
+               ondragover="omDzOver(event,this)" ondragleave="omDzLeave(this)"
+               ondrop="omDzDrop(event,this,'${escAttr(key)}')">
+          Drop a PNG or click to browse
+          <input type="file" accept="image/png,image/jpeg,image/webp"
+                 onchange="omFileInput(this,'${escAttr(key)}')">
+        </label>
+        ${remove}
+      </div>
+      <div class="om-slot-msg" id="${id}-msg"></div>
+    </div>
+  </div>`;
+}
+
+function omMsg(consoleId, text, kind) {
+  const el = document.getElementById(`om-slot-${consoleId || 'system'}-msg`);
+  if (el) { el.textContent = text; el.className = `om-slot-msg ${kind || ''}`; }
 }
 
 function omDzOver(e, el) { e.preventDefault(); el.classList.add('hover'); }
 function omDzLeave(el) { el.classList.remove('hover'); }
-function omDzDrop(e) {
+function omDzDrop(e, el, consoleId) {
   e.preventDefault();
-  document.getElementById('om-drop').classList.remove('hover');
+  el.classList.remove('hover');
   const file = e.dataTransfer.files[0];
-  if (file) omUpload(file);
+  if (file) omUpload(file, consoleId);
 }
-function omFileInput(input) {
+function omFileInput(input, consoleId) {
   const file = input.files[0];
-  if (file) omUpload(file);
+  if (file) omUpload(file, consoleId);
   input.value = '';
 }
 
-async function omUpload(file) {
-  const hint = document.getElementById('om-hint');
-  hint.textContent = 'Uploading…';
+async function omUpload(file, consoleId) {
+  omMsg(consoleId, 'Uploading…', '');
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(`api/overlays/${activeEmu.id}`, { method: 'POST', body: form });
-  if (res.ok) {
-    hint.textContent = 'Saved!';
-    omLoadPreview();
-  } else {
-    hint.textContent = 'Upload failed.';
+  const url = consoleId
+    ? `api/overlays/${encodeURIComponent(activeEmu.id)}/consoles/${encodeURIComponent(consoleId)}`
+    : `api/overlays/${encodeURIComponent(activeEmu.id)}`;
+  let res;
+  try {
+    res = await fetch(url, { method: 'POST', body: form });
+  } catch {
+    omMsg(consoleId, 'Could not reach the server.', 'err');
+    return;
   }
+  if (!res.ok) {
+    // The 422 says a bezel needs a transparent area for the game to show
+    // through. That sentence is the whole value of the check — an image with
+    // no hole is a rectangle painted over the game, and nothing else on this
+    // screen would ever have told the player why.
+    omMsg(consoleId, await omDetail(res), 'err');
+    return;
+  }
+  omMsg(consoleId, 'Saved.', 'ok');
+  omLoadSlots();
 }
 
-async function deleteOverlay() {
+async function omRemoveConsole(consoleId) {
+  if (!confirm('Remove this console\u2019s bezel? Its games fall back to the system one.')) return;
+  const res = await fetch(
+    `api/overlays/${encodeURIComponent(activeEmu.id)}/consoles/${encodeURIComponent(consoleId)}`,
+    { method: 'DELETE' });
+  if (res.ok) omLoadSlots(); else omMsg(consoleId, await omDetail(res), 'err');
+}
+
+async function omRemoveSystem() {
   if (!confirm('Remove the overlay for this emulator?')) return;
-  const res = await fetch(`api/overlays/${activeEmu.id}`, { method: 'DELETE' });
-  if (res.ok) omImgError();
+  const res = await fetch(`api/overlays/${encodeURIComponent(activeEmu.id)}`, { method: 'DELETE' });
+  if (res.ok) omLoadSlots(); else omMsg('', await omDetail(res), 'err');
 }
 
 document.getElementById('overlay-modal').addEventListener('click', e => {

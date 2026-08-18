@@ -23,6 +23,15 @@ préfixes de chemin (`/roms/`, `/saves/`, `/rpcs3/`) sur une origine unique.
 5. Si le navigateur a besoin d'une ressource du cœur, il passe par les statiques
    proxifiés (`/assets/*`) ou par un endpoint passthrough de l'addon (l'API `/api/*`
    du cœur n'est jamais exposée au LAN).
+6. **Un passthrough relaie, il ne réimplémente pas.** Les bezels de rom-manager
+   sont l'exemple : `assets/overlays/` appartient au cœur, et `api: 1` dit qu'un
+   addon écrit dans son propre répertoire de données et nulle part ailleurs.
+   L'addon poste vers le cœur en loopback ; le cœur décide du nom du fichier, de
+   la destination et de la validation. Écrire le PNG depuis l'addon aurait fait
+   une ligne de moins et aurait transformé la règle en « un addon écrit partout
+   où il peut atteindre », pour tous les addons. Le statut ET le corps de la
+   réponse du cœur sont rendus tels quels : un refus porte une phrase qui
+   explique pourquoi, et l'avaler dans un échec générique la perdrait.
 
 ## Phases côté addons
 

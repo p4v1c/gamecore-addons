@@ -303,31 +303,157 @@ async def delete_rom(system_id: str, filename: str):
 
 # ── Overlay passthrough ───────────────────────────────────────────────────────
 # The browser stays same-origin and the core API is never exposed to the LAN
-# (docs/SECURITY.md): overlay upload/delete are relayed to the core over
-# loopback. The core caps overlays at 10 MB, so buffering the body is fine.
+# (docs/SECURITY.md rule 5): overlay reads and writes are relayed to the core
+# over loopback. The core caps overlays at 10 MB, so buffering the body is fine.
+#
+# Relayed rather than done here, and that is the whole design of this section.
+# Overlays live under $GAMECORE_DATA/assets/overlays, which belongs to the CORE
+# — `api: 1` says an addon writes inside its own data directory and nowhere
+# else. Writing the PNG from here would be one line shorter and would quietly
+# turn that rule into "an addon writes wherever it can reach", for every addon.
+# So the core owns the destination, the filename and the validation; this owns
+# the browser.
 CORE_OVERLAYS = f"http://127.0.0.1:{CORE_PORT}/api/overlays"
+
+
+def consoles_of(system: dict) -> list[dict]:
+    """The distinct machines this emulator runs, as systems.json declares them.
+
+    Empty for eleven of the thirteen packs, and empty as well on a box whose
+    grid predates `roms.consoles` — the field arrives through the catalogue
+    merge the core's updater runs, not through this addon. Both cases mean the
+    same thing here: show the system bezel and nothing else, which is exactly
+    what this screen did before.
+    """
+    got = system.get("consoles")
+    if not isinstance(got, list):
+        return []
+    return [c for c in got if isinstance(c, dict) and c.get("id")]
+
+
+def require_console(system: dict, console_id: str) -> None:
+    """404 before the core is touched, on a console this pack does not declare.
+
+    The core checks this too and is the authority. Refusing here as well keeps
+    a typo in the URL from being a round trip, and — more usefully — makes the
+    addon's own tests able to state the rule without a core to talk to.
+    """
+    if console_id not in {c["id"] for c in consoles_of(system)}:
+        raise HTTPException(404, "No such console for this system")
+
+
+async def relay(method: str, path: str, *, body: bytes | None = None,
+                content_type: str = "", timeout: float = 30.0) -> Response:
+    """One call to the core, with its status and body handed straight back.
+
+    The status matters as much as the body: the core answers 422 with a
+    sentence explaining that a bezel needs a transparent area, and swallowing
+    it into a generic failure would leave the player with an image that looks
+    fine and an error that says nothing.
+    """
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        kwargs: dict = {}
+        if body is not None:
+            kwargs["content"] = body
+            kwargs["headers"] = {"content-type": content_type}
+        try:
+            r = await client.request(method, f"{CORE_OVERLAYS}{path}", **kwargs)
+        except httpx.RequestError as e:
+            # The core being down is not this addon being broken, and the
+            # difference has to reach the browser: one is "start the backend",
+            # the other is "report a bug".
+            log.warning("core unreachable for %s %s: %s", method, path, e)
+            raise HTTPException(503, "The GameCore backend is not answering")
+    return Response(content=r.content, status_code=r.status_code,
+                    media_type=r.headers.get("content-type"))
+
+
+OVERLAYS_DIR = GAMECORE_DATA / "assets" / "overlays"
+
+
+@app.get("/api/overlays/{system_id}/slots")
+async def overlay_slots(system_id: str):
+    """Every bezel this system can have, filled or not.
+
+    The screen needs the empty ones as much as the filled ones. A player who
+    drops a PNG for one console of mGBA and is shown nothing about the other
+    two cannot tell whether the upload took, and from a browser a silent
+    success and a silent failure are the same picture.
+
+    Answered by the core, because the hole is measured out of the PNG's alpha
+    channel and a second decoder here would be a second set of numbers to keep
+    in agreement. The one thing handled locally is a core that has never heard
+    of this endpoint — see below.
+    """
+    system = get_system(system_id)
+    r = await relay("GET", f"/{system_id}/slots")
+    if r.status_code == 404:
+        # An addon updates on its own `git pull`; the core updates by OTA. So
+        # the two versions are independent, and this addon WILL run against a
+        # core that predates per-console bezels — that is the normal state of a
+        # box between the two updates, not an edge case.
+        #
+        # Falling back to the system slot alone is the honest answer: such a
+        # core genuinely cannot resolve a console bezel, so offering the slots
+        # would be offering uploads that 404. The screen then behaves exactly
+        # as it did before this version, which is the point.
+        return legacy_slots(system_id, system)
+    return r
+
+
+def legacy_slots(system_id: str, system: dict) -> dict:
+    """The system slot alone, for a core without /slots.
+
+    `present` is read off the disk — reading the player's data is fine, it is
+    WRITING outside the addon's own directory that `api: 1` forbids. The hole
+    is left null rather than guessed: measuring it means decoding the PNG's
+    alpha, the core owns that, and a number invented here would be a second
+    answer to a question that already has one.
+    """
+    png = OVERLAYS_DIR / f"{system_id}.png"
+    return {
+        "system_id": system_id,
+        "legacy_core": True,
+        "note": ("This box's GameCore backend predates per-console bezels. "
+                 "Update the box to give each console its own frame."),
+        "slots": [{
+            "level": "system", "console": None,
+            "label": system.get("label", system_id),
+            "filename": f"{system_id}.png",
+            "present": png.is_file(),
+            "asset": f"/assets/overlays/{system_id}.png" if png.is_file() else None,
+            "hole": None, "ratio": None,
+        }],
+    }
+
+
+@app.post("/api/overlays/{system_id}/consoles/{console_id}")
+async def upload_console_overlay(system_id: str, console_id: str, request: Request):
+    require_console(get_system(system_id), console_id)
+    return await relay("POST", f"/{system_id}/consoles/{console_id}",
+                       body=await request.body(),
+                       content_type=request.headers.get("content-type", ""),
+                       timeout=60.0)
+
+
+@app.delete("/api/overlays/{system_id}/consoles/{console_id}")
+async def delete_console_overlay(system_id: str, console_id: str):
+    require_console(get_system(system_id), console_id)
+    return await relay("DELETE", f"/{system_id}/consoles/{console_id}")
 
 
 @app.post("/api/overlays/{system_id}")
 async def upload_overlay(system_id: str, request: Request):
     get_system(system_id)  # 404 on unknown system before touching the core
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        r = await client.post(
-            f"{CORE_OVERLAYS}/{system_id}",
-            content=await request.body(),
-            headers={"content-type": request.headers.get("content-type", "")},
-        )
-    return Response(content=r.content, status_code=r.status_code,
-                    media_type=r.headers.get("content-type"))
+    return await relay("POST", f"/{system_id}", body=await request.body(),
+                       content_type=request.headers.get("content-type", ""),
+                       timeout=60.0)
 
 
 @app.delete("/api/overlays/{system_id}")
 async def delete_overlay(system_id: str):
     get_system(system_id)
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        r = await client.delete(f"{CORE_OVERLAYS}/{system_id}")
-    return Response(content=r.content, status_code=r.status_code,
-                    media_type=r.headers.get("content-type"))
+    return await relay("DELETE", f"/{system_id}")
 
 
 app.mount("/", StaticFiles(directory=str(ADDON_DIR / "web"), html=True), name="web")

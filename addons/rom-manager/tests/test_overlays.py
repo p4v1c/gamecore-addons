@@ -225,6 +225,23 @@ try:
 finally:
     httpx.AsyncClient = _real
 
+
+
+print("The page is never served from the browser's cache")
+# `web/index.html` changes with every addon update and used to go out with no
+# Cache-Control at all — the browser kept the OLD page a while after
+# `gamecore-addon update`, and the operator saw one overlay slot where the
+# server already offered four. Not a bug in the slots; a bug in the headers.
+r = client.get("/")
+check("index.html answers", r.status_code == 200 and "<html" in r.text.lower(), f"status {r.status_code}")
+check("Cache-Control forbids storing it",
+      "no-store" in r.headers.get("cache-control", ""), r.headers.get("cache-control", "<absent>"))
+# A conditional request must not be answered 304: the browser would then keep
+# what it has, which is exactly the copy this exists to retire.
+r2 = client.get("/", headers={"If-None-Match": r.headers.get("etag", '"x"'),
+                              "If-Modified-Since": r.headers.get("last-modified", "")})
+check("a conditional request still gets the full page", r2.status_code == 200, f"status {r2.status_code}")
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} check(s) FAILED: " + ", ".join(FAILURES))

@@ -748,7 +748,31 @@ async def _finish_job(proc, dest, before):
         _pkg_job.update(state="error", error=str(e))
 
 
-app.mount("/", StaticFiles(directory=str(ADDON_DIR / "web"), html=True), name="web")
+
+class _FreshStatic(StaticFiles):
+    """The addon's page, never served from the browser's cache.
+
+    `web/index.html` is a single file that changes with every addon update,
+    and it was served with no Cache-Control at all — so the browser applied
+    its heuristic freshness and kept the OLD page for a while after
+    `gamecore-addon update`. On the reference box that meant a ROM Manager
+    that still showed one overlay slot per system the evening the core had
+    grown one per console, and "No overlay set" for a file that was there:
+    the new page was on disk and on the wire, the browser just never asked.
+    Same rule the core applies to its theme files (`_NoCacheStatic`): small,
+    local, and a stale copy costs more than a fetch.
+    """
+
+    def is_not_modified(self, response_headers, request_headers) -> bool:
+        return False
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-store, must-revalidate"
+        return resp
+
+
+app.mount("/", _FreshStatic(directory=str(ADDON_DIR / "web"), html=True), name="web")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=PORT)

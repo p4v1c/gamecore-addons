@@ -736,10 +736,19 @@ function omSlotCard(s) {
     ? `<span class="om-badge sys">all of ${escHtml(activeEmu.id)}</span>`
     : `<span class="om-badge ${s.present ? 'on' : 'off'}">${s.present ? 'in place' : 'no bezel'}</span>`;
   // The measured hole, because the ratio is the thing a frame can be wrong
-  // about: a 1:1 frame over a 3:2 console covers the game's edges.
+  // about: a 1:1 frame over a 3:2 console covers the game's edges. When the
+  // pack declares what the machine renders at, the two are compared here —
+  // at upload time, where a mismatch costs a re-upload, not in game where it
+  // costs a frame over the picture and nothing on screen to say why.
+  const bad = s.present && ratioMismatch(s.ratio, s.expected_ratio);
   const meta = s.present
     ? `${escHtml(s.filename)} — hole ${s.hole.w}×${s.hole.h} (${escHtml(s.ratio)})`
-    : `${escHtml(s.filename)} — drop a PNG to create it`;
+      + (s.expected_ratio
+         ? (bad ? ` ⚠ the ${escHtml(s.label)} draws ${escHtml(s.expected_ratio)}`
+                : ` — matches the machine (${escHtml(s.expected_ratio)})`)
+         : '')
+    : `${escHtml(s.filename)} — drop a PNG to create it`
+      + (s.expected_ratio ? ` (${escHtml(s.expected_ratio)})` : '');
   const remove = s.present && s.level === 'console'
     ? `<button class="om-rm" onclick="omRemoveConsole('${escAttr(s.console)}')">Remove</button>`
     : s.present
@@ -766,6 +775,17 @@ function omSlotCard(s) {
       <div class="om-slot-msg" id="${id}-msg"></div>
     </div>
   </div>`;
+}
+
+/** "809:540" vs "3:2" — the measured ratio is reduced from pixels, so equal
+ *  machines rarely produce equal STRINGS. Compare the values, with the same
+ *  1.5% slack a one-pixel rounding on a 1080-tall hole amounts to. */
+function ratioMismatch(measured, expected) {
+  if (!measured || !expected) return false;
+  const val = r => { const [w, h] = String(r).split(':').map(Number); return w > 0 && h > 0 ? w / h : NaN; };
+  const a = val(measured), b = val(expected);
+  if (!isFinite(a) || !isFinite(b)) return false;
+  return Math.abs(a / b - 1) > 0.015;
 }
 
 function omMsg(consoleId, text, kind) {

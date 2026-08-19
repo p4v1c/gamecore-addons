@@ -50,11 +50,14 @@ app = FastAPI(title="GameCore addon — ROM Manager", root_path=os.environ.get("
 # ── helpers (mirrored from the core so the addon stays self-contained) ────────
 
 def fmt_size(n: float) -> str:
-    for unit in ("B", "KB", "MB", "GB"):
-        if n < 1024:
-            return f"{n:.1f} {unit}"
-        n /= 1024
-    return f"{n:.1f} TB"
+    # 1024-based, labelled so (KiB, not KB) — the deliberate mirror of the
+    # core's backend/utils.fmt_size, moved in step with it.
+    x = float(n)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if x < 1024:
+            return f"{x:.1f} {unit}" if unit != "B" else f"{int(x)} B"
+        x /= 1024
+    return f"{x:.1f} TiB"
 
 
 TAG_RE = re.compile(r"[\(\[].*?[\)\]]")  # same rule as the core's backend/utils.py

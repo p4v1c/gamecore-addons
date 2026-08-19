@@ -1,41 +1,41 @@
-# gamecore-addons — Règles de sécurité
+# gamecore-addons — security rules
 
-Le plan complet est dans
+The full plan lives in
 [GamecoreRenew/docs/SECURITY.md](https://github.com/p4v1c/GamecoreRenew/blob/main/docs/SECURITY.md).
-Résumé : un seul port exposé au LAN (Caddy `:8443`, HTTPS + login partagé via
-`forward_auth`), tout le reste en loopback. Les addons sont servis derrière des
-préfixes de chemin (`/roms/`, `/saves/`, `/rpcs3/`) sur une origine unique.
+Summary: a single LAN-facing port (Caddy `:8443`, HTTPS + shared login via
+`forward_auth`), everything else on loopback. Addons are served behind path
+prefixes (`/roms/`, `/saves/`, `/rpcs3/`) on a single origin.
 
-## Règles pour tout addon
+## Rules for every addon
 
-1. **Loopback uniquement** : `uvicorn.run(app, host="127.0.0.1", port=PORT)`.
-   Jamais `0.0.0.0` — c'est Caddy qui expose au LAN.
-2. **Pas de CORS** : derrière Caddy, tout est same-origin. Aucun
-   `CORSMiddleware`.
-3. **Aucune ligne d'auth** dans les addons : Caddy applique le login en amont
-   (`forward_auth` vers le core). L'addon reçoit l'identité via l'en-tête
-   `X-GC-User`, c'est tout.
-4. **Aucun port ni hôte hardcodé côté client** (Phase 4) : URLs relatives dans le
-   HTML/JS, nav partagée basée sur `location.origin` + `/gc/addons`. L'app FastAPI
-   prend `root_path=os.environ.get("ADDON_BASE", "")` et l'`install.sh` passe
-   `ADDON_BASE=/<prefix>` dans l'unit ; `addon.json` déclare ce préfixe dans son
-   champ `path`.
-5. Si le navigateur a besoin d'une ressource du cœur, il passe par les statiques
-   proxifiés (`/assets/*`) ou par un endpoint passthrough de l'addon (l'API `/api/*`
-   du cœur n'est jamais exposée au LAN).
-6. **Un passthrough relaie, il ne réimplémente pas.** Les bezels de rom-manager
-   sont l'exemple : `assets/overlays/` appartient au cœur, et `api: 1` dit qu'un
-   addon écrit dans son propre répertoire de données et nulle part ailleurs.
-   L'addon poste vers le cœur en loopback ; le cœur décide du nom du fichier, de
-   la destination et de la validation. Écrire le PNG depuis l'addon aurait fait
-   une ligne de moins et aurait transformé la règle en « un addon écrit partout
-   où il peut atteindre », pour tous les addons. Le statut ET le corps de la
-   réponse du cœur sont rendus tels quels : un refus porte une phrase qui
-   explique pourquoi, et l'avaler dans un échec générique la perdrait.
+1. **Loopback only**: `uvicorn.run(app, host="127.0.0.1", port=PORT)`.
+   Never `0.0.0.0` — Caddy is what exposes to the LAN.
+2. **No CORS**: behind Caddy everything is same-origin. No
+   `CORSMiddleware`, ever.
+3. **Not one line of auth** in the addons: Caddy enforces the login upstream
+   (`forward_auth` to the core). The addon receives the identity in the
+   `X-GC-User` header, and that is all.
+4. **No hardcoded port or host on the client side** (phase 4): relative URLs
+   in HTML/JS, shared nav based on `location.origin` + `/gc/addons`. The
+   FastAPI app takes `root_path=os.environ.get("ADDON_BASE", "")` and
+   `install.sh` sets `ADDON_BASE=/<prefix>` in the unit; `addon.json` declares
+   the prefix in its `path` field.
+5. When the browser needs a core resource, it goes through the proxied
+   statics (`/assets/*`) or a passthrough endpoint of the addon — the core's
+   `/api/*` is never exposed to the LAN.
+6. **A passthrough relays; it does not reimplement.** rom-manager's bezels are
+   the example: `assets/overlays/` belongs to the core, and `api: 1` says an
+   addon writes inside its own data directory and nowhere else. The addon
+   POSTs to the core over loopback; the core decides the filename, the
+   destination and the validation. Writing the PNG from the addon would have
+   been one line shorter and would have turned the rule into "an addon writes
+   wherever it can reach", for every addon. The core's response **status and
+   body** are returned verbatim: a refusal carries a sentence explaining why,
+   and swallowing it into a generic failure would lose it.
 
-## Phases côté addons
+## Phases on the addon side
 
-- **Phase 1 (cette PR)** : bind `127.0.0.1` + suppression des CORS wildcard dans
-  rom-manager, rpcs3-manager, save-manager et `_template`.
-- **Phase 4** : `root_path`/`ADDON_BASE`, champ `path` dans `addon.json`, nav
-  partagée par chemins, audit complet des URLs absolues dans le HTML/JS.
+- **Phase 1**: bind `127.0.0.1` + removal of wildcard CORS in rom-manager,
+  rpcs3-manager, save-manager and `_template`.
+- **Phase 4**: `root_path`/`ADDON_BASE`, `path` field in `addon.json`, shared
+  path-based nav, full audit of absolute URLs in HTML/JS.

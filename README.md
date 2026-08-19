@@ -3,9 +3,15 @@
 Optional, individually installable modules for [GameCore](https://github.com/p4v1c/GamecoreRenew).
 
 An addon is a versioned directory under `addons/`. This repo checkout **is** the
-runtime: `gamecore-addon install <name>` clones/pulls it to `/opt/gamecore-addons`
-and services run straight from there — `git log` always tells you exactly what
-is running.
+runtime: `gamecore-addon install <name>` clones/pulls it and services run
+straight from the checkout — `git log` always tells you exactly what is
+running. Where the checkout lives depends on the box's layout: an existing
+`/opt/gamecore-addons` keeps being used (every box installed before the
+code/data split has one, with services pointing into it); on a box whose data
+root is separate (`GAMECORE_DATA=/userdata`, what the ISO produces) the CLI
+clones under `$GAMECORE_DATA/addons/_repo` instead — the checkout is mutable
+code, installed and removed by the player at runtime, and that belongs on the
+data side.
 
 ## Install
 

@@ -64,11 +64,21 @@ def C(subpath, mode, kind, exts=(), group="none", glob="*"):
             "exts": [e.lower() for e in exts], "group": group, "glob": glob}
 
 
-CATALOG = {
-    "mgba": {"label": "Game Boy Advance", "bases": [GC_DATA / "emu/mgba"], "collections": [
+def _mgba(folder: str, label: str) -> dict:
+    """mGBA writes <rom>.sav beside the ROM, so a save lives in its ROM folder."""
+    return {"label": label, "bases": [GC_DATA / "emu" / folder], "collections": [
         C("", "files", "save", [".sav", ".srm"], "rom"),
         C("", "files", "state", [f".ss{i}" for i in range(10)], "rom"),
-    ]},
+    ]}
+
+
+CATALOG = {
+    # GameCore split mgba into gb/gbc/gba (core scripts/split-systems.py moves
+    # each ROM and its .sav). `mgba` is the folder of a box that has not moved.
+    "mgba": _mgba("mgba", "Game Boy / Color / Advance"),
+    "gb": _mgba("gb", "Game Boy"),
+    "gbc": _mgba("gbc", "Game Boy Color"),
+    "gba": _mgba("gba", "Game Boy Advance"),
     "melonds": {"label": "Nintendo DS", "bases": [GC_DATA / "emu/melonds"], "collections": [
         C("", "files", "save", [".sav", ".nvm"], "rom"),
         C("", "files", "state", [".mln"] + [f".ml{i}" for i in range(1, 9)], "rom"),
@@ -404,25 +414,29 @@ def _n64_names() -> dict:
 
 def _wii_names() -> dict:
     """4-char disc game code → ROM stem (RVZ/WIA store the disc header, whose
-    game id sits at 0x58; plain ISO/GCM have it at 0)."""
-    d = ROMS / "dolphin"
+    game id sits at 0x58; plain ISO/GCM have it at 0). Dolphin's games live in
+    emu/dolphin until the box is split into emu/gamecube and emu/wii."""
+    out = {}
+    for sub in ("dolphin", "gamecube", "wii"):
+        d = ROMS / sub
 
-    def build():
-        out = {}
-        for f in sorted(d.iterdir()):
-            ext = f.suffix.lower()
-            if ext not in (".rvz", ".wia", ".iso", ".gcm"):
-                continue
-            try:
-                h = f.open("rb").read(0x60)
-            except OSError:
-                continue
-            gid = h[0x58:0x5E] if h[:4] in (b"RVZ\x01", b"WIA\x01") else h[0:6]
-            code = gid[:4].decode("ascii", "ignore")
-            if len(code) == 4 and code.isalnum():
-                out[code.upper()] = f.stem
-        return out
-    return _cached("wii", d, build)
+        def build(d=d):
+            m = {}
+            for f in sorted(d.iterdir()):
+                ext = f.suffix.lower()
+                if ext not in (".rvz", ".wia", ".iso", ".gcm"):
+                    continue
+                try:
+                    h = f.open("rb").read(0x60)
+                except OSError:
+                    continue
+                gid = h[0x58:0x5E] if h[:4] in (b"RVZ\x01", b"WIA\x01") else h[0:6]
+                code = gid[:4].decode("ascii", "ignore")
+                if len(code) == 4 and code.isalnum():
+                    m[code.upper()] = f.stem
+            return m
+        out.update(_cached(f"wii:{sub}", d, build))
+    return out
 
 
 def _3ds_names() -> dict:

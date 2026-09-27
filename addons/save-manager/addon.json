@@ -3,7 +3,7 @@
   "name": "save-manager",
   "label": "Saves",
   "description": "Browse, back up, restore & delete every emulator's saves — per game, incl. inside memory cards — and transfer saves from a PC",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "type": "web",
   "default": false,
   "service": "user",

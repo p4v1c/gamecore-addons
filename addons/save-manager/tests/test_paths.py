@@ -50,6 +50,8 @@ check("covers NOT under PATH", CODE.resolve() not in catalog.COVERS.resolve().pa
 check("roms under DATA", catalog.ROMS == DATA / "emu", str(catalog.ROMS))
 check("mgba base under DATA", catalog.CATALOG["mgba"]["bases"][0] == DATA / "emu/mgba",
       str(catalog.CATALOG["mgba"]["bases"][0]))
+check("gba base under DATA", catalog.CATALOG["gba"]["bases"][0] == DATA / "emu/gba",
+      str(catalog.CATALOG["gba"]["bases"][0]))
 check("melonds base under DATA", catalog.CATALOG["melonds"]["bases"][0] == DATA / "emu/melonds",
       str(catalog.CATALOG["melonds"]["bases"][0]))
 # The exception, guarded: xenia keeps its saves next to its own exe, which

@@ -39,6 +39,7 @@ import test_memcard as cards  # noqa: E402 — synthetic card builders
 import memcard as mc          # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 import server                 # noqa: E402
+import catalog                # noqa: E402
 
 client = TestClient(server.app)
 HOME = ROOT / "home"
@@ -75,6 +76,12 @@ def build_tree():
     (d / "Golden Sun.gba").write_bytes(b"ROM")
     (d / "Golden Sun.sav").write_bytes(b"S" * 512)
     (d / "Golden Sun.ss0").write_bytes(b"st" * 100)
+    # A box already split into one folder per system (core split-systems.py).
+    (GCD / "emu/gb").mkdir(parents=True)
+    (GCD / "emu/gb/Tetris.gb").write_bytes(b"ROM")
+    (GCD / "emu/gb/Tetris.sav").write_bytes(b"S" * 64)
+    (GCD / "emu/wii").mkdir(parents=True)
+    (GCD / "emu/wii/Mario Kart Wii.rvz").write_bytes(b"RVZ\x01" + bytes(0x54) + b"RMCP01")
 
     # DuckStation — PerGameTitle card (no serial in the file name) + a state
     ds = HOME / ".local/share/duckstation"
@@ -169,6 +176,11 @@ def test_listing():
     check("mgba available", emus["mgba"]["available"])
     check("duckstation available", emus["duckstation"]["available"])
     check("unavailable emus flagged", not emus["ppsspp"]["available"])
+
+    check("a split box lists its Game Boy saves", len(games("gb")["games"]) == 1)
+    check("a system with no folder yet is not available", not emus["gbc"]["available"])
+    check("a Wii title is read from emu/wii",
+          catalog._wii_names().get("RMCP") == "Mario Kart Wii")
 
     g = games("mgba")
     check("mgba game found", len(g["games"]) == 1)

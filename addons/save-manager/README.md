@@ -35,7 +35,7 @@ On the box (as configured by the GameCore installer — first existing path wins
 
 | System | Emulator | Native saves | Save states |
 |---|---|---|---|
-| GBA | mGBA | `emu/mgba/<rom>.sav` (next to the ROM) | `<rom>.ss0`–`.ss9` |
+| GB / GBC / GBA | mGBA | `emu/<gb|gbc|gba>/<rom>.sav` (next to the ROM); `emu/mgba/` on a box not yet split | `<rom>.ss0`–`.ss9` |
 | DS | melonDS | `emu/melonds/<rom>.sav` | `<rom>.ml1`–`.ml8`, `.mln` |
 | N64 | gopher64 | `…/gopher64/saves/<name>-<sha256>.{eep,sra,fla,mpk}` | `…/gopher64/states/` |
 | PS1 | DuckStation | `~/.local/share/duckstation/memcards/*.mcd` (1 card per game by default) | `savestates/<serial>_<slot>.sav` |
@@ -82,6 +82,10 @@ python gamecore-save-export.py --push http://BOX:8772 # pack + upload in one go
 python gamecore-save-export.py --path mgba="D:\roms\gba" --push http://BOX:8772
 python gamecore-save-export.py --n64-rom Zelda.z64 --n64-save old.sra
 ```
+
+A `--push` of mGBA saves lands in `emu/mgba/`. On a box already split with
+GameCore's `scripts/split-systems.py`, upload the zip from the web UI to the
+Game Boy, Color or Advance entry instead, so each save sits next to its ROM.
 
 It knows the default save locations of all 13 systems (including portable
 modes), reads Ryujinx's save index on the PC to emit `switch-title/…` paths,

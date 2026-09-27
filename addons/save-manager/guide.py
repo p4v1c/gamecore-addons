@@ -189,3 +189,6 @@ GUIDE = {
         "notes": ["No account dependency: only the user number (1) matters, and the addon handles it."],
     },
 }
+
+# One emulator, one guide: GameCore files mGBA's games under gb, gbc and gba.
+GUIDE.update({sid: GUIDE["mgba"] for sid in ("gb", "gbc", "gba")})

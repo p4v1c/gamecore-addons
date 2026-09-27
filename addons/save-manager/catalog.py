@@ -140,6 +140,14 @@ CATALOG = {
         C("nand/user/save", "dirs", "save", (), "switch", glob="0000000000000000/*/*"),
         C("nand/user/save/cache", "dirs", "save", (), "shared"),
     ]},
+    # Eden (the core's `switch` pack): yuzu layout, one folder per title under
+    # each account; the all-zero account holds device saves.
+    "switch": {"label": "Nintendo Switch", "bases": [
+        HOME / ".var/app/dev.eden_emu.eden/data/eden",
+        HOME / ".local/share/eden"], "collections": [
+        C("nand/user/save", "dirs", "save", (), "switch", glob="0000000000000000/*/*"),
+        C("nand/user/save/cache", "dirs", "save", (), "shared"),
+    ]},
     # Left on GC, not GC_DATA, and this one is a genuine exception. Xenia Canary
     # is portable: it keeps its saves in content/ *next to its own exe*, and the
     # exe lives under lib/ in the code root. So a data directory physically sits
@@ -502,7 +510,7 @@ def _switch_dir_names(d: Path, cache_key: str) -> dict:
 
 def _switch_names() -> dict:
     out = dict(_SWITCH_KNOWN)
-    for i, d in enumerate((ROMS / "citron", ROMS / "Switch DLC & Updates")):
+    for i, d in enumerate((ROMS / "switch", ROMS / "ryujinx", ROMS / "Switch DLC & Updates")):
         for tid, name in _switch_dir_names(d, f"switch{i}").items():
             out.setdefault(tid, name)
     return out

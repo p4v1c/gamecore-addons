@@ -46,6 +46,7 @@ On the box (as configured by the GameCore installer — first existing path wins
 | Wii U | Cemu | `…/Cemu/mlc01/usr/save/00050000/<tid-lo>/` | — (none in Cemu) |
 | 3DS | Azahar | `…/azahar-emu/sdmc/Nintendo 3DS/<id0>/<id1>/title/00040000/<tid-lo>/data/00000001/` (+ `extdata`) | `states/<tid>.<slot>.cst` |
 | Switch | Ryujinx | `…/Ryujinx/bis/user/save/<install-specific id>/{0,1}/` | — |
+| Switch | Eden | `…/eden/nand/user/save/0000000000000000/<user>/<titleid>/` (device saves: user `000…0`) | — |
 | X360 | Xenia Canary | `lib/xenia/content/<XUID>/<TitleID>/00000001/` (+ `Headers/`) | — |
 | PS4 | shadPS4 | `…/shadPS4/home/1/savedata/<CUSA…>/` (≤0.15: `savedata/1/<CUSA…>/`) | — |
 
@@ -60,7 +61,7 @@ Native saves are portable, but three systems hide them behind
 
 | Prefix in the zip | System | Why raw paths don't transfer |
 |---|---|---|
-| `switch-title/<titleid>/<type>/…` | Switch | Ryujinx numbers save dirs per install (`bis/user/save/…05`); yuzu-family uses per-install user dirs |
+| `switch-title/<titleid>/<type>/…` | Switch (Ryujinx, Eden) | Ryujinx numbers save dirs per install (`bis/user/save/…05`); Eden (yuzu layout) uses per-install user dirs. Type `3` is a device save |
 | `x360-title/<TitleID>/…` | Xbox 360 | Xenia saves live under the profile's XUID |
 | `ps4-title/<CUSA…>/<savedir>/…` | PS4 | shadPS4 moved its savedata dir in v0.16 |
 

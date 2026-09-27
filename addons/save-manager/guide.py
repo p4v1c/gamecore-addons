@@ -190,5 +190,8 @@ GUIDE = {
     },
 }
 
+# The Switch guide covers both layouts; the switch-title zips restore into either.
+GUIDE["switch"] = GUIDE["ryujinx"]
+
 # One emulator, one guide: GameCore files mGBA's games under gb, gbc and gba.
 GUIDE.update({sid: GUIDE["mgba"] for sid in ("gb", "gbc", "gba")})

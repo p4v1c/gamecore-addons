@@ -128,7 +128,7 @@ CATALOG = {
         HOME / ".var/app/info.cemu.Cemu/data/Cemu", HOME / ".local/share/Cemu"], "collections": [
         C("mlc01/usr/save", "dirs", "save", (), "wiiu", glob="*/*"),
     ]},
-    "ryujinx": {"label": "Nintendo Switch", "bases": [
+    "ryujinx": {"label": "Switch (Ryujinx)", "bases": [
         HOME / ".var/app/io.github.ryubing.Ryujinx/config/Ryujinx",
         HOME / ".config/Ryujinx"], "collections": [
         # Ryujinx layout: install-specific save ids, identified via ExtraData /
@@ -288,11 +288,30 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", s.lower())
 
 
+_covers: tuple = (None, {})
+
+
+def _cover_index() -> dict:
+    """{normalised name: cover}, rebuilt when the covers root or one of its system
+    folders changes (a new cover lands in a subfolder, not in the root)."""
+    global _covers
+    try:
+        dirs = [COVERS, *sorted(d for d in COVERS.iterdir() if d.is_dir())]
+        stamp = tuple(d.stat().st_mtime_ns for d in dirs)
+    except OSError:
+        return {}
+    if _covers[0] != stamp:
+        _covers = (stamp, {_norm(p.stem): p for d in dirs for p in d.iterdir()
+                           if p.suffix.lower() in (".png", ".webp", ".jpg")})
+    return _covers[1]
+
+
 def cover_for(*candidates: str) -> Path | None:
     """Match a game to a GameCore cover. Covers are named after the ROM display
-    name; compare ignoring case/punctuation so 'Zelda: BOTW' ≈ 'Zelda_BOTW'."""
-    idx = _cached("covers", COVERS,
-                  lambda: {_norm(p.stem): p for p in COVERS.glob("*.png")})
+    name; compare ignoring case/punctuation so 'Zelda: BOTW' ≈ 'Zelda_BOTW'.
+    The core files them per system and as .webp (emu/covers/<system>/<rom>.webp);
+    reading only *.png at the top level found none of them."""
+    idx = _cover_index()
     for c in candidates:
         if c and (p := idx.get(_norm(c))):
             return p

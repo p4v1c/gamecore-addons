@@ -654,8 +654,10 @@ def delete_backup(emu_id: str, id: str):
 # one format so a save moves between them.
 _NORM_TAGS = {"switch-title": ("ryujinx", "switch"), "x360-title": ("xenia",),
               "ps4-title": ("shadps4",)}
-# yuzu layout: device saves sit under the all-zero account.
-_DEVICE_USER, _DEVICE_TYPE = "0" * 32, "3"
+# yuzu layout: device saves sit under the all-zero account. A Ryujinx Bcat
+# container (type 2) holding game data goes there too: Eden has no Bcat saves,
+# and ACNH's island reached one through an older import.
+_DEVICE_USER, _DEVICE_TYPE, _DEVICE_TYPES = "0" * 32, "3", ("2", "3")
 
 
 def _clear_dir(d: Path) -> None:
@@ -719,7 +721,7 @@ def _restore_normalized(emu_id: str, base: Path, zf: zipfile.ZipFile,
                 restored.append(f"{tid} → {d.name}")
             else:                        # yuzu-family layout: dir name IS the title id
                 user_root = base / "nand/user/save/0000000000000000"
-                user = _DEVICE_USER if typ == _DEVICE_TYPE else _yuzu_user_for(user_root, tid)
+                user = _DEVICE_USER if typ in _DEVICE_TYPES else _yuzu_user_for(user_root, tid)
                 d = user_root / user / tid
                 _backup(d)
                 _clear_dir(d)

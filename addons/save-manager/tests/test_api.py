@@ -368,6 +368,16 @@ def test_eden():
           (eden / ("0" * 32) / "0100152000022000/device.sav").read_bytes()
           == b"device.sav" * 10)
 
+    # A Ryujinx Bcat container (ACNH's island) is a device save in Eden.
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("switch-title/01006F8002326000/2/main.dat", b"island")
+    buf.seek(0)
+    r3 = client.post("/api/saves/switch/upload-full", files={"file": ("acnh.zip", buf)})
+    check("Bcat save restored ok", r3.status_code == 200, r3.text)
+    check("Bcat save lands under the null user",
+          (eden / ("0" * 32) / "01006F8002326000/main.dat").read_bytes() == b"island")
+
 
 def test_xenia():
     print("Xenia (Xbox 360)")

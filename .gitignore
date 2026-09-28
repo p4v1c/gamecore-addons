@@ -6,3 +6,6 @@ addons/*/web/gamecore-nav.css
 addons/*/local_bases.json
 addons/local-coop/state/
 addons/*/sfo.py
+addons/*/web/gamecore-ui.css
+addons/*/web/gamecore-icons.js
+addons/*/web/fonts/

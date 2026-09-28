@@ -52,6 +52,10 @@ fi
 echo "[${ADDON_NAME}] Shared nav component"
 cp "${ADDON_DIR}/../../shared/nav/gamecore-nav.js"  "${ADDON_DIR}/web/"
 cp "${ADDON_DIR}/../../shared/nav/gamecore-nav.css" "${ADDON_DIR}/web/"
+cp "${ADDON_DIR}/../../shared/ui/gamecore-ui.css"    "${ADDON_DIR}/web/"
+cp "${ADDON_DIR}/../../shared/ui/gamecore-icons.js"  "${ADDON_DIR}/web/"
+mkdir -p "${ADDON_DIR}/web/fonts"
+cp "${ADDON_DIR}/../../shared/ui/fonts/"*            "${ADDON_DIR}/web/fonts/"
 
 echo "[${ADDON_NAME}] systemd user unit"
 mkdir -p "${UNIT_DIR}"

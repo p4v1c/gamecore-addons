@@ -3,15 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GameCore — Template addon</title>
+<title>GameCore template addon</title>
+<!-- Shared look: tokens and components from shared/ui (see its DESIGN.md), copied here by install.sh. -->
+<link rel="stylesheet" href="gamecore-ui.css">
 <link rel="stylesheet" href="gamecore-nav.css">
+<script src="gamecore-icons.js"></script>
 <script src="gamecore-nav.js" defer></script>
-<style>
-  body { background:#0b0d12; color:#dde1ed; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-         display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }
-</style>
 </head>
 <body>
-  <p>Template addon — replace me.</p>
+<main class="page">
+  <header class="page-head">
+    <div>
+      <h1 class="page-title">Template addon</h1>
+      <div class="page-meta">Replace this page with your addon's screen.</div>
+    </div>
+  </header>
+  <div class="page-body">
+    <div class="empty">Nothing here yet.</div>
+  </div>
+</main>
 </body>
 </html>

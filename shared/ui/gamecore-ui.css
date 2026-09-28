@@ -100,7 +100,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .row-meta { font-size: 14px; color: var(--ink-3); margin-top: 1px; }
 .row-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .row-icon { color: var(--ink-3); }
-.cover { width: 48px; height: 64px; border-radius: 6px; object-fit: cover;
+.cover { width: 48px; height: 64px; border-radius: 6px; object-fit: contain;
   background: var(--raised); flex-shrink: 0; display: grid; place-items: center; color: var(--ink-3); }
 .tag { font-size: 14px; color: var(--warn); }
 

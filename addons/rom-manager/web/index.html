@@ -13,10 +13,12 @@
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 20px 16px; }
 .card { position: relative; display: flex; flex-direction: column; gap: 8px; }
-.card-art { aspect-ratio: 3 / 4; border-radius: var(--r-card); background: var(--raised); overflow: hidden;
-  display: grid; place-items: center; color: var(--ink-3); border: 1px solid var(--line); }
-.card-art img { width: 100%; height: 100%; object-fit: cover; }
-.card-art .ext { font-size: 20px; font-weight: 700; color: var(--ink-3); }
+/* Boxes differ by console (N64 landscape, DS square, Wii tall): each is shown whole
+   at its own ratio, never cropped to one. */
+.grid { align-items: start; }
+.card-art img { display: block; width: 100%; border-radius: 6px; border: 1px solid var(--line); }
+.card-art .ext { aspect-ratio: 3 / 4; display: grid; place-items: center; border-radius: var(--r-card);
+  background: var(--raised); border: 1px solid var(--line); font-size: 20px; font-weight: 700; color: var(--ink-3); }
 .card-name { font-size: 15px; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow: hidden; }
 .card-meta { font-size: 14px; color: var(--ink-3); }
@@ -189,10 +191,9 @@ async function loadRoms(emuId) {
 }
 
 function cardHTML(emuId, rom) {
-  const art = rom.cover
-    ? `<img src="api/roms/${emuId}/cover?name=${encodeURIComponent(rom.name)}" alt="" loading="lazy"
-           onerror="this.outerHTML='<span class=&quot;ext&quot;>${escHtml(rom.ext)}</span>'">`
-    : `<span class="ext">${escHtml(rom.ext)}</span>`;
+  // The core finds or fetches the cover; a game it has none for falls back to its extension.
+  const art = `<img src="api/roms/${emuId}/cover?name=${encodeURIComponent(rom.name)}" alt="" loading="lazy"
+           onerror="this.outerHTML='<span class=&quot;ext&quot;>${escHtml(rom.ext)}</span>'">`;
   return `
     <div class="card">
       <div class="card-art">${art}</div>

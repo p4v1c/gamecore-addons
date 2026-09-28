@@ -39,6 +39,7 @@ Identity sources per system:
 """
 import os
 import re
+import struct
 from pathlib import Path, PurePosixPath
 
 import memcard
@@ -289,6 +290,7 @@ def _norm(s: str) -> str:
 
 
 _covers: tuple = (None, {})
+_TAGS = re.compile(r"\[[^\]]*\]|\([^)]*\)")
 
 
 def _cover_index() -> dict:
@@ -301,8 +303,15 @@ def _cover_index() -> dict:
     except OSError:
         return {}
     if _covers[0] != stamp:
-        _covers = (stamp, {_norm(p.stem): p for d in dirs for p in d.iterdir()
-                           if p.suffix.lower() in (".png", ".webp", ".jpg")})
+        idx = {}
+        for d in dirs:
+            for p in d.iterdir():
+                if p.suffix.lower() in (".png", ".webp", ".jpg"):
+                    # Also under the name without its tags: the core keeps
+                    # '[0100…][v0]' in some cover names, the save side never has them.
+                    idx.setdefault(_norm(_TAGS.sub("", p.stem)), p)
+                    idx[_norm(p.stem)] = p
+        _covers = (stamp, idx)
     return _covers[1]
 
 
@@ -312,7 +321,10 @@ def cover_for(*candidates: str) -> Path | None:
     The core files them per system and as .webp (emu/covers/<system>/<rom>.webp);
     reading only *.png at the top level found none of them."""
     idx = _cover_index()
-    for c in candidates:
+    # Last resort, the core's own file name: it cuts a title at its last dot
+    # ('New Super Mario Bros. Wii (Europe)' is cached as 'New Super Mario Bros').
+    cut = [c.rsplit(".", 1)[0] for c in candidates if c and "." in c]
+    for c in (*candidates, *cut):
         if c and (p := idx.get(_norm(c))):
             return p
     return None
@@ -496,28 +508,53 @@ _SWITCH_KNOWN = {
     "01006F8002326000": "Animal Crossing: New Horizons",
     "0100000000010000": "Super Mario Odyssey",
     "01006A800016E000": "Super Smash Bros. Ultimate",
+    "01006FE013472000": "Mario Party Superstars",
+    "01008CF01BAAC000": "The Legend Of Zelda Echoes Of Wisdom",
 }
 
 _TID_RE = re.compile(r"(?<![0-9A-Fa-f])(01[0-9A-Fa-f]{14})(?![0-9A-Fa-f])")
 
 
+def _nsp_ticket_tid(f: Path) -> str | None:
+    """Title id from the ticket inside an NSP: a PFS0 archive whose file table
+    lists '<title id><key gen>.tik'. A ticketless dump has none."""
+    try:
+        with open(f, "rb") as h:
+            head = h.read(16)
+            if head[:4] != b"PFS0":
+                return None
+            count, strsize = struct.unpack("<II", head[4:12])
+            h.seek(16 + count * 24)
+            names = h.read(strsize).split(b"\0")
+    except OSError:
+        return None
+    for n in names:
+        if re.fullmatch(rb"01[0-9a-fA-F]{30}\.tik", n):   # rights id = title id + key gen
+            return n[:16].decode().upper()
+    return None
+
+
 def _switch_dir_names(d: Path, cache_key: str) -> dict:
-    """Base title id → display name, from update/DLC ids in NSP file names
-    (updates end in …800, DLC ids live one 0x1000 block above the base)."""
+    """Base title id → display name, from update/DLC ids in NSP file names, or
+    the ticket inside a plain 'Game.nsp' (updates end in …800, DLC ids live one
+    0x1000 block above the base)."""
     def build():
         out = {}
         for f in sorted(d.iterdir()):
             m = _TID_RE.search(f.name)
-            if not m:
+            if m:
+                tid, end = int(m.group(1), 16), m.start()
+            elif f.suffix.lower() == ".nsp" and (t := _nsp_ticket_tid(f)):
+                tid, end = int(t, 16), len(f.stem)
+            else:
                 continue
-            tid = int(m.group(1), 16)
             if tid & 0xFFF == 0x800:
                 base = tid - 0x800
             elif tid & 0xFFF:
                 base = ((tid >> 12) - 1) << 12
             else:
                 base = tid
-            name = f.name[:m.start()]
+            name = f.name[:end]
             name = re.sub(r"\[[^\]]*\]?", " ", name)          # [UPD], [v65536]…
             name = re.sub(r"[._]", " ", name)
             name = re.sub(r"\bv\d[\d. ]*$", "", _collapse(name)).strip(" -")

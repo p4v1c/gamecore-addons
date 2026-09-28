@@ -94,6 +94,17 @@ os.environ["GAMECORE_DATA"] = ""
 importlib.reload(server)
 check("empty GAMECORE_DATA falls back too", server.GAMECORE_DATA == CODE, str(server.GAMECORE_DATA))
 
+print("cover lookup")
+covers = server.COVERS_DIR / "gamecube"
+covers.mkdir(parents=True)
+(covers / "Zelda.webp").write_bytes(b"x")
+(server.COVERS_DIR / "secret.png").write_bytes(b"x")
+check("cover found by ROM stem", server.cover_path("gamecube", "Zelda.iso") == covers / "Zelda.webp")
+check("folder game matched by its name", server.cover_path("gamecube", "Zelda") == covers / "Zelda.webp")
+check("no cover, no path", server.cover_path("gamecube", "Mario.iso") is None)
+check("a name cannot climb out of the system folder",
+      server.cover_path("gamecube", "../secret.png") is None)
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} check(s) FAILED: " + ", ".join(FAILURES))

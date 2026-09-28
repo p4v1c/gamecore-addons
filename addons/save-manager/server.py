@@ -505,7 +505,7 @@ def _arc_items(emu_id: str, base: Path, cols: list, entries: list) -> list[tuple
     items = []
     for e in entries:
         col, p = cols[e["ci"]], e["path"]
-        if e["key"] and emu_id == "ryujinx":
+        if e["key"] and emu_id in _NORM_TAGS["switch-title"]:
             if col["subpath"] == "bis/user/save":
                 tid, typ = ryu.identify(base, p)
                 if tid:
@@ -513,7 +513,8 @@ def _arc_items(emu_id: str, base: Path, cols: list, entries: list) -> list[tuple
                     items.append((src, f"switch-title/{tid}/{typ or 1}"))
                     continue
             elif col["subpath"] == "nand/user/save":
-                items.append((p, f"switch-title/{e['key']}/1"))
+                typ = _DEVICE_TYPE if p.parent.name == _DEVICE_USER else "1"
+                items.append((p, f"switch-title/{e['key']}/{typ}"))
                 continue
         elif e["key"] and emu_id == "xenia":
             items.append((p, f"x360-title/{p.name.upper()}"))
@@ -649,7 +650,14 @@ def delete_backup(emu_id: str, id: str):
     return {"ok": True}
 
 
-_NORM_TAGS = {"switch-title": "ryujinx", "x360-title": "xenia", "ps4-title": "shadps4"}
+# Normalized zip prefix → the systems that restore it. Ryujinx and Eden share
+# one format so a save moves between them.
+_NORM_TAGS = {"switch-title": ("ryujinx", "switch"), "x360-title": ("xenia",),
+              "ps4-title": ("shadps4",)}
+# yuzu layout: device saves sit under the all-zero account. A Ryujinx Bcat
+# container (type 2) holding game data goes there too: Eden has no Bcat saves,
+# and ACNH's island reached one through an older import.
+_DEVICE_USER, _DEVICE_TYPE, _DEVICE_TYPES = "0" * 32, "3", ("2", "3")
 
 
 def _clear_dir(d: Path) -> None:
@@ -665,7 +673,8 @@ def _yuzu_user_for(user_root: Path, tid: str) -> str:
     (which is often the empty all-zero account)."""
     if not user_root.is_dir():
         return "0" * 32
-    users = [p for p in user_root.iterdir() if p.is_dir()]
+    # The all-zero account holds device saves, never an account's.
+    users = [p for p in user_root.iterdir() if p.is_dir() and p.name != _DEVICE_USER]
     if not users:
         return "0" * 32
     for u in users:
@@ -680,7 +689,7 @@ def _restore_normalized(emu_id: str, base: Path, zf: zipfile.ZipFile,
     """Write switch-title/… x360-title/… ps4-title/… members onto this
     install's own layout (see _arc_items). `norm` = [(ZipInfo, rel parts)]."""
     restored = []
-    if emu_id == "ryujinx":
+    if emu_id in _NORM_TAGS["switch-title"]:
         # group by (title id, save type); target the local save container
         groups: dict = {}
         for m, parts in norm:
@@ -712,7 +721,8 @@ def _restore_normalized(emu_id: str, base: Path, zf: zipfile.ZipFile,
                 restored.append(f"{tid} → {d.name}")
             else:                        # yuzu-family layout: dir name IS the title id
                 user_root = base / "nand/user/save/0000000000000000"
-                d = user_root / _yuzu_user_for(user_root, tid) / tid
+                user = _DEVICE_USER if typ in _DEVICE_TYPES else _yuzu_user_for(user_root, tid)
+                d = user_root / user / tid
                 _backup(d)
                 _clear_dir(d)
                 for m, rest in files:
@@ -797,11 +807,11 @@ async def upload_full(emu_id: str, file: UploadFile = File(...)):
         rel = PurePosixPath(m.filename)
         if rel.is_absolute() or ".." in rel.parts or not rel.parts:
             raise HTTPException(400, "zip contains an unsafe path")
-        tag_emu = _NORM_TAGS.get(rel.parts[0])
-        if tag_emu:
-            if tag_emu != emu_id:
+        tag_emus = _NORM_TAGS.get(rel.parts[0])
+        if tag_emus:
+            if emu_id not in tag_emus:
                 raise HTTPException(400,
-                    f"'{m.filename}' is a {CATALOG[tag_emu]['label']} save — "
+                    f"'{m.filename}' is a {CATALOG[tag_emus[0]]['label']} save — "
                     f"upload it to that system instead")
             norm.append((m, rel.parts))
         else:

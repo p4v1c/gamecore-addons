@@ -116,6 +116,13 @@ def build_tree():
     (tr / "TROPCONF.SFM").write_text("<trophyconf><title-name>Demon Quest</title-name></trophyconf>")
     (tr / "TROPUSR.DAT").write_bytes(b"t" * 128)
 
+    # Eden — yuzu layout: MK8 has an account save AND a device save
+    eden = HOME / ".var/app/dev.eden_emu.eden/data/eden/nand/user/save/0000000000000000"
+    for user, name in (("0" * 31 + "1", "account.sav"), ("0" * 32, "device.sav")):
+        d = eden / user / "0100152000022000"
+        d.mkdir(parents=True)
+        (d / name).write_bytes(name.encode() * 10)
+
     # Ryujinx — one save with ExtraData, one identified via imkvdb.arc only
     ry = HOME / ".var/app/io.github.ryubing.Ryujinx/config/Ryujinx"
     MK8 = 0x0100152000022000                      # Mario Kart 8 (known title)
@@ -337,6 +344,41 @@ def test_ryujinx():
     check("switch zip refused on xenia", r4.status_code == 400)
 
 
+def test_eden():
+    print("Eden (Switch)")
+    g = games("switch")
+    keys = {x["key"] for x in g["games"]}
+    check("Eden save listed", "0100152000022000" in keys, str(keys))
+    r = client.get("/api/games/switch/download", params={"key": "0100152000022000"})
+    names = sorted(zipfile.ZipFile(io.BytesIO(r.content)).namelist())
+    check("account and device saves kept apart",
+          names == ["switch-title/0100152000022000/1/account.sav",
+                    "switch-title/0100152000022000/3/device.sav"], str(names))
+
+    eden = HOME / ".var/app/dev.eden_emu.eden/data/eden/nand/user/save/0000000000000000"
+    (eden / ("0" * 31 + "1") / "0100152000022000/account.sav").write_bytes(b"broken")
+    (eden / ("0" * 32) / "0100152000022000/device.sav").write_bytes(b"broken")
+    r2 = client.post("/api/saves/switch/upload-full",
+                     files={"file": ("mk8.zip", io.BytesIO(r.content))})
+    check("Eden restore ok", r2.status_code == 200, r2.text)
+    check("account save back in the account",
+          (eden / ("0" * 31 + "1") / "0100152000022000/account.sav").read_bytes()
+          == b"account.sav" * 10)
+    check("device save back under the null user",
+          (eden / ("0" * 32) / "0100152000022000/device.sav").read_bytes()
+          == b"device.sav" * 10)
+
+    # A Ryujinx Bcat container (ACNH's island) is a device save in Eden.
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("switch-title/01006F8002326000/2/main.dat", b"island")
+    buf.seek(0)
+    r3 = client.post("/api/saves/switch/upload-full", files={"file": ("acnh.zip", buf)})
+    check("Bcat save restored ok", r3.status_code == 200, r3.text)
+    check("Bcat save lands under the null user",
+          (eden / ("0" * 32) / "01006F8002326000/main.dat").read_bytes() == b"island")
+
+
 def test_xenia():
     print("Xenia (Xbox 360)")
     g = games("xenia")
@@ -538,6 +580,7 @@ if __name__ == "__main__":
     test_dolphin_gci()
     test_rpcs3_grouping()
     test_ryujinx()
+    test_eden()
     test_xenia()
     test_shadps4()
     test_zip_roundtrip()

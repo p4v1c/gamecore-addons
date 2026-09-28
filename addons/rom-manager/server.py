@@ -27,7 +27,7 @@ from pathlib import Path
 import httpx
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 ADDON_DIR = Path(__file__).parent
@@ -38,6 +38,9 @@ GAMECORE_PATH = Path(os.environ.get("GAMECORE_PATH", "/opt/GameCore"))
 # has moved the data and no supported box sets one variable without the other.
 GAMECORE_DATA = Path(os.environ.get("GAMECORE_DATA") or GAMECORE_PATH)
 SYSTEMS_FILE = GAMECORE_DATA / "config" / "systems.json"
+# The core's scraped box art: emu/covers/<system>/<ROM name without extension>.<ext>.
+COVERS_DIR = GAMECORE_DATA / "emu" / "covers"
+COVER_TYPES = {".webp": "image/webp", ".png": "image/png", ".jpg": "image/jpeg"}
 PORT = int(os.environ.get("ADDON_PORT", 8770))
 CORE_PORT = int(os.environ.get("GAMECORE_BACKEND_PORT", 8765))
 CORE_NOTIFY = f"http://127.0.0.1:{CORE_PORT}/api/addons/notify"
@@ -182,6 +185,27 @@ def list_emulators():
     return result
 
 
+def cover_path(system_id: str, name: str) -> Path | None:
+    """The core's cover for this ROM (or game folder), if one was scraped."""
+    folder = COVERS_DIR / system_id
+    stem = Path(safe_filename(name)).stem if Path(name).suffix else safe_filename(name)
+    for ext in COVER_TYPES:
+        p = folder / f"{stem}{ext}"
+        if p.is_file():
+            return p
+    return None
+
+
+@app.get("/api/roms/{system_id}/cover")
+def rom_cover(system_id: str, name: str):
+    """Read-only: the ROM list shows the box art the core already scraped."""
+    system = get_system(system_id)
+    p = cover_path(system["id"], name)
+    if p is None or COVERS_DIR.resolve() not in p.resolve().parents:
+        raise HTTPException(404)
+    return FileResponse(str(p), media_type=COVER_TYPES[p.suffix.lower()])
+
+
 @app.get("/api/roms/{system_id}")
 def list_roms(system_id: str):
     system = get_system(system_id)
@@ -197,6 +221,7 @@ def list_roms(system_id: str):
             "size":        size,
             "sizeHuman":   fmt_size(size),
             "ext":         "DISC" if f.is_dir() else f.suffix.lstrip(".").upper(),
+            "cover":       cover_path(system["id"], f.name) is not None,
         })
     return files
 

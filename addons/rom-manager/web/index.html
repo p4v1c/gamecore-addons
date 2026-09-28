@@ -3,443 +3,272 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GameCore — ROM Manager</title>
+<title>GameCore games</title>
+<link rel="stylesheet" href="gamecore-ui.css">
 <link rel="stylesheet" href="gamecore-nav.css">
+<script src="gamecore-icons.js"></script>
 <script src="gamecore-nav.js" defer></script>
 <style>
-/* The shared nav bar is fixed at the top — shrink the full-height panes. */
-body.gc-nav-present #sidebar,
-body.gc-nav-present #main { height: calc(100vh - 44px); }
-</style>
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:        #0b0d12;
-  --surface:   #13161e;
-  --surface2:  #1c202c;
-  --surface3:  #252a38;
-  --border:    rgba(255,255,255,0.07);
-  --text:      #dde1ed;
-  --text2:     #7d8499;
-  --accent:    #5c7cfa;
-  --danger:    #f04040;
-  --success:   #40d480;
-  --radius:    10px;
-  --sidebar-w: 260px;
-  --font:      -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-}
-html,body{height:100%;overflow:hidden}
-body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex;font-size:14px}
-::-webkit-scrollbar{width:6px;height:6px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:3px}
+.rail-logo { width: 28px; height: 28px; object-fit: contain; flex-shrink: 0; }
 
-#sidebar{
-  width:var(--sidebar-w);min-width:var(--sidebar-w);height:100vh;
-  background:var(--surface);border-right:1px solid var(--border);
-  display:flex;flex-direction:column;overflow:hidden;
-}
-.sidebar-header{padding:24px 20px 16px;border-bottom:1px solid var(--border);flex-shrink:0}
-.sidebar-logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;letter-spacing:.3px;color:#fff}
-.sidebar-logo svg{color:var(--accent)}
-.sidebar-sub{margin-top:4px;font-size:11px;color:var(--text2);letter-spacing:.5px;text-transform:uppercase}
-.emu-list{flex:1;overflow-y:auto;padding:8px 0}
-.emu-item{
-  display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;
-  border-left:3px solid transparent;transition:background .15s,border-color .15s;
-  position:relative;user-select:none;
-}
-.emu-item:hover{background:var(--surface2)}
-.emu-item.active{background:var(--surface2);border-left-color:var(--emu-color,var(--accent))}
-.emu-item.active .emu-name{color:#fff}
-.emu-icon{width:32px;height:32px;border-radius:6px;object-fit:contain;background:var(--surface3);padding:3px;flex-shrink:0}
-.emu-info{flex:1;min-width:0}
-.emu-name{font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.emu-platform{font-size:11px;color:var(--text2);margin-top:1px}
-.emu-badge{
-  background:var(--surface3);color:var(--text2);font-size:11px;font-weight:600;
-  padding:2px 7px;border-radius:20px;flex-shrink:0;
-}
-.emu-item.active .emu-badge{background:var(--emu-color,var(--accent));color:#fff}
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 20px 16px; }
+.card { position: relative; display: flex; flex-direction: column; gap: 8px; }
+.card-art { aspect-ratio: 3 / 4; border-radius: var(--r-card); background: var(--raised); overflow: hidden;
+  display: grid; place-items: center; color: var(--ink-3); border: 1px solid var(--line); }
+.card-art img { width: 100%; height: 100%; object-fit: cover; }
+.card-art .ext { font-size: 20px; font-weight: 700; color: var(--ink-3); }
+.card-name { font-size: 15px; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden; }
+.card-meta { font-size: 14px; color: var(--ink-3); }
+.card-del { position: absolute; top: 8px; right: 8px; opacity: 0; background: rgba(9, 9, 15, 0.85); }
+.card:hover .card-del, .card-del:focus-visible { opacity: 1; }
+@media (hover: none) { .card-del { opacity: 1; } }
 
-#main{flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
-.top-bar{
-  display:flex;align-items:center;justify-content:space-between;padding:18px 28px;
-  border-bottom:1px solid var(--border);flex-shrink:0;background:var(--surface);gap:16px;
-}
-.top-bar-left{display:flex;align-items:center;gap:14px}
-.platform-badge{font-size:12px;font-weight:600;padding:4px 12px;border-radius:20px;background:var(--emu-color,var(--accent));color:#fff;letter-spacing:.3px}
-.top-title{font-size:18px;font-weight:700;color:#fff}
-.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border-radius:var(--radius);border:none;cursor:pointer;font-size:13px;font-weight:600;transition:opacity .15s,transform .1s}
-.btn:active{transform:scale(.97)}
-.btn-primary{background:var(--accent);color:#fff}
-.btn-primary:hover{opacity:.88}
-.btn-outline{background:transparent;color:var(--text);border:1px solid var(--border)}
-.btn-outline:hover{background:var(--surface2);border-color:rgba(255,255,255,.15)}
-.content{flex:1;overflow-y:auto;padding:28px}
+.drag-overlay { position: fixed; inset: 0; z-index: 100; display: none; place-items: center;
+  background: rgba(9, 9, 15, 0.94); pointer-events: none; }
+.drag-overlay.visible { display: grid; }
+.drag-box { width: min(440px, 90vw); padding: 48px 32px; border: 2px dashed var(--accent-soft);
+  border-radius: 20px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.drag-box .icon { width: 40px; height: 40px; color: var(--accent-soft); }
+.drag-title { font-size: 20px; font-weight: 700; }
+.drag-sub { font-size: 16px; color: var(--ink-2); }
 
-.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;color:var(--text2);text-align:center}
-.empty-icon{width:72px;height:72px;border:2px dashed var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--text2)}
-.empty-title{font-size:15px;font-weight:600;color:var(--text)}
-.empty-sub{font-size:13px;max-width:280px;line-height:1.6}
+.toast-row { display: flex; gap: 12px; align-items: baseline; }
+.toast-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.toast-state { font-size: 14px; color: var(--ink-3); }
+.toast-state.ok { color: var(--ok); } .toast-state.err { color: var(--danger); }
+.bar { height: 4px; border-radius: 2px; background: var(--hover); margin-top: 8px; overflow: hidden; }
+.bar-fill { height: 100%; width: 0; background: var(--accent-soft); transition: width .1s; }
+.bar-fill.ok { background: var(--ok); } .bar-fill.err { background: var(--danger); }
 
-.games-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:24px}
-.game-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column;transition:border-color .15s,transform .15s;position:relative}
-.game-card:hover{border-color:var(--emu-color,var(--accent));transform:translateY(-2px)}
-.card-thumb{height:100px;background:linear-gradient(135deg,var(--surface2),var(--surface3));display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0;position:relative}
-.card-ext{position:absolute;bottom:6px;right:8px;font-size:10px;font-weight:700;letter-spacing:.5px;background:rgba(0,0,0,.6);color:var(--text2);padding:2px 6px;border-radius:4px}
-.card-body{padding:10px 12px;flex:1;display:flex;flex-direction:column;gap:4px}
-.card-name{font-size:12px;font-weight:600;color:var(--text);word-break:break-all;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.card-size{font-size:11px;color:var(--text2);margin-top:auto}
-.card-del{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.7);color:#ff5555;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;opacity:0;transition:opacity .15s,background .15s}
-.game-card:hover .card-del{opacity:1}
-.card-del:hover{background:var(--danger);color:#fff}
-
-.drop-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:28px;text-align:center;color:var(--text2);cursor:pointer;transition:border-color .2s,background .2s;display:flex;flex-direction:column;align-items:center;gap:10px}
-.drop-zone:hover,.drop-zone.hover{border-color:var(--emu-color,var(--accent));background:rgba(92,124,250,.05);color:var(--text)}
-.drop-zone svg{opacity:.5}
-.drop-zone:hover svg,.drop-zone.hover svg{opacity:1}
-.drop-zone input{display:none}
-
-#drag-overlay{position:fixed;inset:0;background:rgba(11,13,18,.92);backdrop-filter:blur(6px);display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:100;pointer-events:none}
-#drag-overlay.visible{display:flex}
-.drag-overlay-box{width:420px;max-width:90vw;border:2px dashed var(--emu-color,var(--accent));border-radius:20px;padding:52px 40px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px;animation:pulse 1.5s ease-in-out infinite}
-.drag-overlay-box svg{color:var(--emu-color,var(--accent));opacity:.9}
-.drag-title{font-size:20px;font-weight:700;color:#fff}
-.drag-sub{font-size:14px;color:var(--text2)}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(92,124,250,.3)}50%{box-shadow:0 0 0 12px rgba(92,124,250,0)}}
-
-#toasts{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:10px;z-index:200;width:340px}
-.toast{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;flex-direction:column;gap:8px;box-shadow:0 8px 32px rgba(0,0,0,.5);animation:slideIn .2s ease}
-@keyframes slideIn{from{transform:translateX(120%);opacity:0}to{transform:none;opacity:1}}
-.toast-row{display:flex;align-items:center;gap:10px}
-.toast-name{flex:1;font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
-.toast-state{font-size:11px;color:var(--text2)}
-.progress-bar{height:3px;background:var(--surface3);border-radius:2px;overflow:hidden}
-.progress-fill{height:100%;background:var(--emu-color,var(--accent));border-radius:2px;transition:width .1s}
-
-#welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--text2);text-align:center}
-#welcome h2{font-size:22px;color:var(--text);font-weight:700}
-#welcome p{font-size:14px;max-width:320px;line-height:1.7}
-
-.spinner{width:32px;height:32px;border:3px solid var(--surface3);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-
-/* Overlay modal */
-#overlay-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);z-index:300;display:none;align-items:center;justify-content:center}
-#overlay-modal.open{display:flex}
-.om-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:560px;max-width:95vw;overflow:hidden;display:flex;flex-direction:column}
-.om-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--border)}
-.om-title{font-size:16px;font-weight:700;color:#fff}
-.om-close{background:none;border:none;color:var(--text2);cursor:pointer;font-size:22px;line-height:1;padding:0 4px;transition:color .15s}
-.om-close:hover{color:#fff}
-.om-body{padding:24px;display:flex;flex-direction:column;gap:20px}
-.om-footer{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-top:1px solid var(--border)}
-/* One card per bezel slot. A pack that runs several machines gets several;
-   eleven of the thirteen get exactly one and look as they always did. */
-.om-slots{display:flex;flex-direction:column;gap:14px}
-.om-slot{border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;gap:14px;align-items:flex-start}
-.om-slot.empty{border-style:dashed}
-.om-slot-thumb{flex:0 0 128px;aspect-ratio:16/9;border-radius:8px;border:1px solid var(--border);background:var(--surface2);display:flex;align-items:center;justify-content:center;overflow:hidden}
-.om-slot-thumb img{width:100%;height:100%;object-fit:contain}
-.om-slot-thumb .om-empty{color:var(--text2);font-size:11px;text-align:center;padding:4px}
-.om-slot-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
-.om-slot-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.om-slot-name{font-size:14px;font-weight:700;color:#fff}
-.om-badge{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:20px;border:1px solid}
-.om-badge.on{color:#8ce99a;border-color:rgba(140,233,154,.4);background:rgba(140,233,154,.08)}
-.om-badge.off{color:var(--text2);border-color:var(--border)}
-.om-badge.sys{color:var(--text2);border-color:var(--border)}
-.om-slot-meta{font-size:11px;color:var(--text2);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}
-.om-slot-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.om-mini{border:1px dashed var(--border);border-radius:8px;padding:7px 12px;cursor:pointer;font-size:12px;color:var(--text2);transition:border-color .2s,background .2s,color .2s}
-.om-mini:hover,.om-mini.hover{border-color:var(--emu-color,var(--accent));background:rgba(92,124,250,.06);color:var(--text)}
-.om-mini input{display:none}
-.om-rm{background:none;border:none;color:var(--danger);font-size:12px;cursor:pointer;padding:7px 4px}
-.om-rm:hover{text-decoration:underline}
-.om-slot-msg{font-size:12px;min-height:1em}
-.om-slot-msg.err{color:var(--danger)}
-.om-slot-msg.ok{color:#8ce99a}
-.om-hint{font-size:12px;color:var(--text2)}
-.btn-danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}
-.btn-danger:hover{background:var(--danger);color:#fff}
+.modal { position: fixed; inset: 0; z-index: 300; display: none; place-items: center; background: rgba(0, 0, 0, 0.7); padding: 16px; }
+.modal.open { display: grid; }
+.modal-box { width: min(620px, 100%); max-height: 90vh; overflow-y: auto; background: var(--surface);
+  border: 1px solid var(--line-strong); border-radius: 16px; }
+.modal-head { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
+.modal-title { font-size: 20px; font-weight: 700; flex: 1; }
+.modal-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
+.modal-foot { padding: 0 24px 20px; font-size: 14px; color: var(--ink-3); }
+.slot { display: flex; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: var(--r-card); }
+.slot.empty { border-style: dashed; }
+.slot-thumb { flex: 0 0 144px; aspect-ratio: 16 / 9; border-radius: var(--r-control); background: var(--bg);
+  display: grid; place-items: center; overflow: hidden; color: var(--ink-3); font-size: 14px; }
+.slot-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.slot-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.slot-name { font-size: 16px; font-weight: 700; }
+.slot-state { font-size: 14px; color: var(--ink-3); font-weight: 400; margin-left: 8px; }
+.slot-state.on { color: var(--ok); }
+.slot-meta { font-size: 14px; color: var(--ink-3); word-break: break-all; }
+.slot-meta .warn { color: var(--warn); }
+.slot-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.slot-msg { font-size: 14px; min-height: 1em; }
+.slot-msg.err { color: var(--danger); } .slot-msg.ok { color: var(--ok); }
+@media (max-width: 560px) { .slot { flex-direction: column; } .slot-thumb { flex-basis: auto; } }
 </style>
 </head>
 <body>
-
-<aside id="sidebar">
-  <div class="sidebar-header">
-    <div class="sidebar-logo">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="2" y="6" width="20" height="12" rx="2"/>
-        <path d="M6 10h4M8 8v4"/>
-        <circle cx="16" cy="10" r="1" fill="currentColor"/>
-        <circle cx="18" cy="12" r="1" fill="currentColor"/>
-      </svg>
-      GameCore
+<div class="app">
+  <aside class="rail">
+    <div class="rail-head">
+      <div class="rail-title">Games</div>
+      <div class="rail-sub" id="rail-sub">Loading</div>
     </div>
-    <div class="sidebar-sub" id="sidebar-sub">ROM Manager</div>
-  </div>
-  <div class="emu-list" id="emu-list">
-    <div style="padding:40px 20px;text-align:center"><div class="spinner" style="margin:0 auto"></div></div>
-  </div>
-</aside>
+    <nav class="rail-list" id="emu-list" aria-label="Systems"><div class="spinner"></div></nav>
+  </aside>
+  <main class="page" id="page"><div class="spinner"></div></main>
+</div>
+<input type="file" id="file-input" multiple hidden onchange="handleFileInput(this)">
 
-<main id="main">
-  <div class="top-bar" id="top-bar" style="display:none">
-    <div class="top-bar-left">
-      <span class="platform-badge" id="top-badge">–</span>
-      <span class="top-title" id="top-title">Select an emulator</span>
-    </div>
-    <button class="btn btn-outline" id="btn-overlay" onclick="openOverlayModal()" style="display:none">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 8h10M7 12h6"/></svg>
-      Overlay
-    </button>
-    <button class="btn btn-primary" id="btn-add" onclick="triggerFileInput()">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-      <span id="btn-add-label">Add ROMs</span>
-    </button>
-    <input type="file" id="file-input" multiple style="display:none" onchange="handleFileInput(this)">
-  </div>
-
-  <div class="content" id="content">
-    <div id="welcome">
-      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".3">
-        <rect x="2" y="6" width="20" height="12" rx="2"/>
-        <path d="M6 10h4M8 8v4"/>
-        <circle cx="16" cy="10" r="1" fill="currentColor"/>
-        <circle cx="18" cy="12" r="1" fill="currentColor"/>
-      </svg>
-      <h2>Select an emulator</h2>
-      <p>Choose a platform on the left to view and manage your ROM library.</p>
-    </div>
-  </div>
-</main>
-
-<div id="drag-overlay">
-  <div class="drag-overlay-box" id="drag-box">
-    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-      <polyline points="17 8 12 3 7 8"/>
-      <line x1="12" y1="3" x2="12" y2="15"/>
-    </svg>
-    <div class="drag-title">Drop to add ROMs</div>
-    <div class="drag-sub" id="drag-sub-text">Select an emulator first</div>
+<div class="drag-overlay" id="drag-overlay">
+  <div class="drag-box">
+    <span id="drag-icon"></span>
+    <div class="drag-title">Drop to add games</div>
+    <div class="drag-sub" id="drag-sub">Pick a system first</div>
   </div>
 </div>
 
-<!-- Overlay modal -->
-<div id="overlay-modal">
-  <div class="om-box">
-    <div class="om-header">
-      <span class="om-title" id="om-title">Overlay — —</span>
-      <button class="om-close" onclick="closeOverlayModal()">×</button>
+<div class="modal" id="overlay-modal" role="dialog" aria-modal="true" aria-labelledby="om-title">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span class="modal-title" id="om-title">Bezels</span>
+      <button class="btn icon-only" id="om-close" onclick="closeOverlayModal()" aria-label="Close"></button>
     </div>
-    <div class="om-body">
-      <div class="om-slots" id="om-slots"></div>
-    </div>
-    <div class="om-footer">
-      <span class="om-hint" id="om-hint"></span>
-      <div style="display:flex;gap:10px">
-        <!-- Removal is per slot now: a pack with three consoles has three
-             bezels, and one button in the footer could only ever mean one of
-             them. -->
-        <button class="btn btn-outline" onclick="closeOverlayModal()">Close</button>
-      </div>
-    </div>
+    <div class="modal-body" id="om-slots"></div>
+    <div class="modal-foot" id="om-hint"></div>
   </div>
 </div>
 
-<div id="toasts"></div>
+<div class="toasts" id="toasts" role="status"></div>
 
 <script>
-// ROM API is served by this addon (relative URLs — the page lives under the
-// /roms/ prefix behind Caddy, or at / on the loopback port). Core assets
-// (system icons, overlay previews) come from the SAME origin: Caddy routes
-// root-absolute /assets/* to the core. Overlay upload/delete go through this
-// addon's /api/overlays passthrough — the core API itself is never exposed.
+// The ROM API is this addon's (relative URLs: the page lives under /roms/ behind
+// Caddy, or at / on the loopback port). System logos and bezel previews are core
+// assets on the same origin: Caddy routes root-absolute /assets/* to the core.
+// Bezel upload and delete go through this addon's /api/overlays passthrough.
 
 let emulators = [];
 let activeEmu = null;
 let dragDepth = 0;
-
-const EXT_EMOJI = {
-  ISO:'💿', BIN:'💿', CUE:'💿',
-  XCI:'🎮', NSP:'🎮', PKG:'📦',
-  N64:'🎮', Z64:'🎮', V64:'🎮',
-  NDS:'🎮', GBA:'🎮', GBC:'🎮', GB:'🎮',
-  CSO:'💿', RVZ:'💿', GCM:'💿',
-  WUX:'📦', RPX:'📦',
-  ZIP:'🗜️',
-};
-
-function getEmoji(ext) { return EXT_EMOJI[ext?.toUpperCase()] || '🎮'; }
-
-function setAccentColor(color) {
-  document.documentElement.style.setProperty('--emu-color', color);
-}
+const $ = id => document.getElementById(id);
+const I = (n, c) => gcIcon(n, c);
+const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
 
 async function loadEmulators() {
-  const res = await fetch('api/emulators');
-  emulators = await res.json();
-  renderSidebar();
+  try {
+    const res = await fetch('api/emulators');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    emulators = await res.json();
+  } catch (e) {
+    $('emu-list').innerHTML = `<div class="empty error">Couldn't list the systems: ${escHtml(e.message)}</div>`;
+    return;
+  }
+  renderRail();
 }
 
-function renderSidebar() {
-  const list = document.getElementById('emu-list');
-  const totalRoms = emulators.reduce((s, e) => s + e.romCount, 0);
-  document.getElementById('sidebar-sub').textContent =
-    `${totalRoms} ROM${totalRoms !== 1 ? 's' : ''} · ${emulators.length} platforms`;
-
-  list.innerHTML = emulators.map(e => `
-    <div class="emu-item" id="emu-${e.id}" onclick="selectEmulator('${e.id}')"
-         style="--emu-color:${e.color}">
-      <img class="emu-icon" src="/${e.iconPath}" alt="${e.platform}" onerror="this.style.display='none'">
-      <div class="emu-info">
-        <div class="emu-name">${e.platform}</div>
-        ${e.totalSize ? `<div class="emu-platform">${e.totalSize}</div>` : ''}
-      </div>
-      <span class="emu-badge" id="badge-${e.id}">${e.romCount}</span>
-    </div>
-  `).join('');
+function renderRail() {
+  const total = emulators.reduce((s, e) => s + e.romCount, 0);
+  $('rail-sub').textContent = `${plural(total, 'game')} on ${plural(emulators.length, 'system')}`;
+  $('emu-list').innerHTML = emulators.map(e => `
+    <button class="rail-item" id="emu-${e.id}" onclick="selectEmulator('${e.id}')"
+            ${activeEmu && activeEmu.id === e.id ? 'aria-current="true"' : ''}>
+      <img class="rail-logo" src="/${e.iconPath}" alt="" onerror="this.remove()">
+      <span class="rail-name">${escHtml(e.platform)}</span>
+      <span class="rail-count" id="badge-${e.id}">${e.romCount}</span>
+    </button>`).join('');
 }
 
 async function selectEmulator(id) {
   activeEmu = emulators.find(e => e.id === id);
   if (!activeEmu) return;
-
-  document.querySelectorAll('.emu-item').forEach(el => el.classList.remove('active'));
-  const item = document.getElementById(`emu-${id}`);
-  item.classList.add('active');
-
-  setAccentColor(activeEmu.color);
-
-  document.getElementById('top-bar').style.display = '';
-  document.getElementById('btn-overlay').style.display = '';
-  document.getElementById('top-badge').textContent = activeEmu.platform;
-  document.getElementById('top-title').textContent = `${activeEmu.platform} Library`;
-  // Folder-based systems (PS3 disc games…) upload whole game folders: the
-  // browse picker switches to directory mode and the hints say "folder".
-  const fileInput = document.getElementById('file-input');
-  fileInput.webkitdirectory = !!activeEmu.scanDirs;
-  document.getElementById('btn-add-label').textContent =
-    activeEmu.scanDirs ? 'Add game folder' : 'Add ROMs';
-  const extList = activeEmu.scanDirs ? 'game folders' : (activeEmu.extensions || []).join('  ');
-  document.getElementById('drag-sub-text').innerHTML =
-    `Drop ${activeEmu.scanDirs ? 'a game folder' : 'files'} for <strong>${activeEmu.platform}</strong><br>
-     <span style="font-size:12px;opacity:.7">${escHtml(extList)}</span>`;
-
+  document.querySelectorAll('.rail-item').forEach(el => el.removeAttribute('aria-current'));
+  $(`emu-${id}`)?.setAttribute('aria-current', 'true');
+  history.replaceState(null, '', `?system=${encodeURIComponent(id)}`);
+  // Folder-based systems (PS3 disc games) upload whole game folders.
+  $('file-input').webkitdirectory = !!activeEmu.scanDirs;
+  $('drag-sub').textContent = activeEmu.scanDirs
+    ? `A game folder for ${activeEmu.platform}`
+    : `Files for ${activeEmu.platform}: ${(activeEmu.extensions || []).join(' ')}`;
   await loadRoms(id);
 }
 
-async function loadRoms(emuId) {
-  const content = document.getElementById('content');
-  content.innerHTML = '<div style="display:flex;justify-content:center;padding:60px"><div class="spinner"></div></div>';
-
-  const res = await fetch(`api/roms/${emuId}`);
-  const roms = await res.json();
-
-  const badge = document.getElementById(`badge-${emuId}`);
-  if (badge) badge.textContent = roms.length;
-
-  if (roms.length === 0) {
-    content.innerHTML = `
-      <div class="empty-state" style="height:auto;padding:60px 0">
-        <div class="empty-icon">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="17 8 12 3 7 8"/>
-            <line x1="12" y1="3" x2="12" y2="15"/>
-          </svg>
-        </div>
-        <div class="empty-title">No ROMs yet</div>
-        <div class="empty-sub">Drag &amp; drop ROM files here, or click <strong>Add ROMs</strong> above.</div>
+function pageHead(count, size) {
+  const meta = [plural(count, 'game')];
+  if (size) meta.push(size);
+  return `
+    <header class="page-head">
+      <div>
+        <h1 class="page-title">${escHtml(activeEmu.platform)}</h1>
+        <div class="page-meta">${meta.join(', ')}</div>
       </div>
-      ${dropZoneHTML()}
-    `;
-  } else {
-    content.innerHTML = `
-      <div class="games-grid">${roms.map(r => gameCardHTML(emuId, r)).join('')}</div>
-      ${dropZoneHTML()}
-    `;
-  }
+      <div class="page-actions">
+        <button class="btn" onclick="openOverlayModal()">${I('image','sm')}Bezels</button>
+        <button class="btn primary" onclick="triggerFileInput()">${I('plus','sm')}${activeEmu.scanDirs ? 'Add a game folder' : 'Add games'}</button>
+      </div>
+    </header>`;
 }
 
-function gameCardHTML(emuId, rom) {
+async function loadRoms(emuId) {
+  $('page').innerHTML = '<div class="spinner"></div>';
+  let roms;
+  try {
+    const res = await fetch(`api/roms/${emuId}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    roms = await res.json();
+  } catch (e) {
+    $('page').innerHTML = `<div class="page-body"><div class="empty error">Couldn't read the games: ${escHtml(e.message)}</div></div>`;
+    return;
+  }
+  const badge = $(`badge-${emuId}`);
+  if (badge) badge.textContent = roms.length;
+  const body = roms.length
+    ? `<div class="grid">${roms.map(r => cardHTML(emuId, r)).join('')}</div>`
+    : `<div class="empty">No game here yet. Drop ${activeEmu.scanDirs ? 'a game folder' : 'files'} anywhere on this page, or use ${activeEmu.scanDirs ? 'Add a game folder' : 'Add games'}.</div>`;
+  $('page').innerHTML = `${pageHead(roms.length, activeEmu.totalSize)}
+    <div class="page-body"><section class="section">${body}</section>
+      <section class="section">${dropZoneHTML()}</section></div>`;
+}
+
+function cardHTML(emuId, rom) {
+  const art = rom.cover
+    ? `<img src="api/roms/${emuId}/cover?name=${encodeURIComponent(rom.name)}" alt="" loading="lazy"
+           onerror="this.outerHTML='<span class=&quot;ext&quot;>${escHtml(rom.ext)}</span>'">`
+    : `<span class="ext">${escHtml(rom.ext)}</span>`;
   return `
-    <div class="game-card">
-      <div class="card-thumb">
-        ${getEmoji(rom.ext)}
-        <span class="card-ext">${rom.ext}</span>
-      </div>
-      <div class="card-body">
-        <div class="card-name" title="${escHtml(rom.name)}">${escHtml(rom.displayName || rom.name)}</div>
-        <div class="card-size">${rom.sizeHuman}</div>
-      </div>
-      <button class="card-del" title="Delete" onclick="deleteRom('${emuId}','${escAttr(rom.name)}',this)">×</button>
-    </div>
-  `;
+    <div class="card">
+      <div class="card-art">${art}</div>
+      <div class="card-name" title="${escHtml(rom.name)}">${escHtml(rom.displayName || rom.name)}</div>
+      <div class="card-meta">${escHtml(rom.ext)}, ${rom.sizeHuman}</div>
+      <button class="btn danger icon-only card-del" title="Delete" aria-label="Delete ${escHtml(rom.displayName || rom.name)}"
+              onclick="deleteRom('${emuId}','${escAttr(rom.name)}',this)">${I('trash','sm')}</button>
+    </div>`;
 }
 
 function dropZoneHTML() {
-  const dirs = !!(activeEmu && activeEmu.scanDirs);
-  const exts = dirs ? 'game folders' : (activeEmu ? (activeEmu.extensions || []).join('  ') : '');
+  const dirs = !!activeEmu.scanDirs;
+  const exts = dirs ? 'Game folders' : (activeEmu.extensions || []).join(' ');
   return `
-    <label class="drop-zone" id="drop-zone-inner"
-           ondragover="dzOver(event,this)" ondragleave="dzLeave(this)" ondrop="dzDrop(event)">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="17 8 12 3 7 8"/>
-        <line x1="12" y1="3" x2="12" y2="15"/>
-      </svg>
-      <span style="font-size:13px;font-weight:600">Drag &amp; drop ${dirs ? 'a game folder' : 'ROMs'} here</span>
-      <span style="font-size:12px;color:var(--text2)">or click to browse ${dirs ? 'for a folder' : 'files'}</span>
-      ${exts ? `<span style="font-size:11px;color:var(--text2);letter-spacing:.3px">${escHtml(exts)}</span>` : ''}
+    <label class="drop" id="drop-zone-inner" ondragover="dzOver(event,this)" ondragleave="dzLeave(this)" ondrop="dzDrop(event)">
+      ${I('upload')}
+      <span><b>Add ${dirs ? 'a game folder' : 'games'}</b>Drop ${dirs ? 'a folder' : 'files'} here or click to browse. ${escHtml(exts)}</span>
       <input type="file" multiple ${dirs ? 'webkitdirectory' : ''} onchange="handleFileInput(this)">
-    </label>
-  `;
+    </label>`;
 }
 
 async function deleteRom(emuId, filename, btn) {
-  if (!confirm(`Delete "${filename}"?`)) return;
+  if (!confirm(`Delete "${filename}" from the box?`)) return;
   btn.disabled = true;
-  btn.textContent = '…';
-  const res = await fetch(`api/roms/${emuId}/${encodeURIComponent(filename)}`, {method:'DELETE'});
+  const res = await fetch(`api/roms/${emuId}/${encodeURIComponent(filename)}`, {method: 'DELETE'});
   if (res.ok) {
-    btn.closest('.game-card').remove();
-    const grid = document.querySelector('.games-grid');
-    if (grid && grid.children.length === 0) await loadRoms(emuId);
-    const badge = document.getElementById(`badge-${emuId}`);
+    btn.closest('.card').remove();
+    const badge = $(`badge-${emuId}`);
     if (badge) badge.textContent = Math.max(0, parseInt(badge.textContent) - 1);
+    if (!document.querySelector('.grid .card')) await loadRoms(emuId);
   } else {
-    btn.textContent = '×';
     btn.disabled = false;
-    alert('Delete failed.');
+    toast(`Couldn't delete "${filename}".`, true);
   }
 }
 
 function triggerFileInput() {
-  if (!activeEmu) { alert('Select an emulator first.'); return; }
-  document.getElementById('file-input').click();
+  if (!activeEmu) { toast('Pick a system first.', true); return; }
+  $('file-input').click();
 }
 
 function handleFileInput(input) {
-  if (!activeEmu) { alert('Select an emulator first.'); return; }
+  if (!activeEmu) { toast('Pick a system first.', true); return; }
   uploadFiles(Array.from(input.files));
   input.value = '';
+}
+
+function toast(msg, err) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (err ? ' error' : '');
+  el.textContent = msg;
+  $('toasts').appendChild(el);
+  setTimeout(() => el.remove(), err ? 6000 : 3500);
+}
+
+function progressToast(name) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `<div class="toast-row"><span class="toast-name" title="${escHtml(name)}">${escHtml(name)}</span>
+    <span class="toast-state">0%</span></div><div class="bar"><div class="bar-fill"></div></div>`;
+  $('toasts').appendChild(el);
+  const state = el.querySelector('.toast-state'), fill = el.querySelector('.bar-fill');
+  return {
+    progress(pct, text) { fill.style.width = pct + '%'; state.textContent = text || pct + '%'; },
+    done() { fill.style.width = '100%'; fill.classList.add('ok'); state.className = 'toast-state ok'; state.textContent = 'Done'; setTimeout(() => el.remove(), 3000); },
+    fail(text) { fill.classList.add('err'); state.className = 'toast-state err'; state.textContent = text; setTimeout(() => el.remove(), 8000); },
+  };
 }
 
 function uploadFiles(files) {
   if (!activeEmu || !files.length) return;
   if (activeEmu.scanDirs) {
-    // Folder-based system: files must come from the directory picker, which
-    // stamps webkitRelativePath ("Game/PS3_GAME/…"). Group them per game.
-    const entries = files.filter(f => f.webkitRelativePath)
-                         .map(f => ({ file: f, relpath: f.webkitRelativePath }));
-    if (!entries.length) {
-      alert(`${activeEmu.platform} games are folders — drop the whole game folder here.`);
-      return;
-    }
+    // Folder-based system: files come from the directory picker, which stamps
+    // webkitRelativePath ("Game/PS3_GAME/…"). Group them per game.
+    const entries = files.filter(f => f.webkitRelativePath).map(f => ({ file: f, relpath: f.webkitRelativePath }));
+    if (!entries.length) { toast(`${activeEmu.platform} games are folders: drop the whole game folder.`, true); return; }
     for (const [game, batch] of groupByTopDir(entries)) uploadFolder(game, batch, activeEmu.id);
     return;
   }
@@ -457,107 +286,49 @@ function groupByTopDir(entries) {
 }
 
 function uploadOne(file, emuId) {
-  const toastId = `toast-${Date.now()}-${Math.random()}`;
-  const toastEl = document.createElement('div');
-  toastEl.className = 'toast';
-  toastEl.id = toastId;
-  toastEl.innerHTML = `
-    <div class="toast-row">
-      <span class="toast-name" title="${escHtml(file.name)}">${escHtml(file.name)}</span>
-      <span class="toast-state" id="${toastId}-state">0%</span>
-    </div>
-    <div class="progress-bar"><div class="progress-fill" id="${toastId}-fill" style="width:0"></div></div>
-  `;
-  document.getElementById('toasts').appendChild(toastEl);
-
+  const t = progressToast(file.name);
   const xhr = new XMLHttpRequest();
   const form = new FormData();
   form.append('file', file);
-
-  xhr.upload.onprogress = e => {
-    if (!e.lengthComputable) return;
-    const pct = Math.round(e.loaded / e.total * 100);
-    document.getElementById(`${toastId}-fill`).style.width = pct + '%';
-    document.getElementById(`${toastId}-state`).textContent = pct + '%';
-  };
-
+  xhr.upload.onprogress = e => { if (e.lengthComputable) t.progress(Math.round(e.loaded / e.total * 100)); };
   xhr.onload = () => {
-    const stateEl = document.getElementById(`${toastId}-state`);
-    const fillEl  = document.getElementById(`${toastId}-fill`);
-    if (xhr.status === 200) {
-      stateEl.textContent = 'Done';
-      stateEl.style.color = 'var(--success)';
-      fillEl.style.width = '100%';
-      fillEl.style.background = 'var(--success)';
-      if (activeEmu && activeEmu.id === emuId) loadRoms(emuId);
-      setTimeout(() => toastEl.remove(), 3000);
-    } else {
-      stateEl.textContent = 'Failed';
-      stateEl.style.color = 'var(--danger)';
-      fillEl.style.background = 'var(--danger)';
-      setTimeout(() => toastEl.remove(), 5000);
-    }
+    if (xhr.status === 200) { t.done(); if (activeEmu && activeEmu.id === emuId) loadRoms(emuId); }
+    else t.fail('Failed');
   };
-
-  xhr.onerror = () => {
-    document.getElementById(`${toastId}-state`).textContent = 'Error';
-    setTimeout(() => toastEl.remove(), 5000);
-  };
-
+  xhr.onerror = () => t.fail('Network error');
   xhr.open('POST', `api/roms/${emuId}/upload`);
   xhr.send(form);
 }
 
 function dzOver(e, el) { e.preventDefault(); el.classList.add('hover'); }
 function dzLeave(el) { el.classList.remove('hover'); }
-function dzDrop(e) {
-  e.preventDefault();
-  document.getElementById('drop-zone-inner')?.classList.remove('hover');
-  handleDrop(e);
-}
+function dzDrop(e) { e.preventDefault(); $('drop-zone-inner')?.classList.remove('hover'); handleDrop(e); }
 
-// ── Folder drops (PS3-style disc games) ───────────────────────────────────────
-// webkitGetAsEntry() only works synchronously inside the drop event, so the
-// entries are grabbed here and traversed asynchronously afterwards.
+// Folder drops (PS3-style disc games). webkitGetAsEntry() only works inside the
+// drop event itself, so the entries are grabbed here and walked afterwards.
 function handleDrop(e) {
-  if (!activeEmu) { alert('Select an emulator first.'); return; }
-  if (!activeEmu.scanDirs) {
-    uploadFiles(Array.from(e.dataTransfer.files));
-    return;
-  }
-  const entries = Array.from(e.dataTransfer.items || [])
-    .map(i => i.webkitGetAsEntry && i.webkitGetAsEntry())
-    .filter(Boolean);
+  if (!activeEmu) { toast('Pick a system first.', true); return; }
+  if (!activeEmu.scanDirs) { uploadFiles(Array.from(e.dataTransfer.files)); return; }
+  const entries = Array.from(e.dataTransfer.items || []).map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
   const dirs = entries.filter(en => en.isDirectory);
-  if (!dirs.length) {
-    alert(`${activeEmu.platform} games are folders — drop the whole game folder here.`);
-    return;
-  }
+  if (!dirs.length) { toast(`${activeEmu.platform} games are folders: drop the whole game folder.`, true); return; }
   dirs.forEach(dir => uploadDroppedDir(dir, activeEmu.id));
 }
 
 async function uploadDroppedDir(dirEntry, emuId) {
   const collected = [];
-  try {
-    await collectDirEntry(dirEntry, dirEntry.name, collected);
-  } catch (err) {
-    alert(`Could not read "${dirEntry.name}": ${err.message || err}`);
-    return;
-  }
-  if (!collected.length) { alert(`"${dirEntry.name}" is empty.`); return; }
+  try { await collectDirEntry(dirEntry, dirEntry.name, collected); }
+  catch (err) { toast(`Couldn't read "${dirEntry.name}": ${err.message || err}`, true); return; }
+  if (!collected.length) { toast(`"${dirEntry.name}" is empty.`, true); return; }
   uploadFolder(dirEntry.name, collected, emuId);
 }
 
 function readAllEntries(reader) {
-  // readEntries returns at most ~100 entries per call — drain it.
+  // readEntries returns at most ~100 entries per call: drain it.
   return new Promise((resolve, reject) => {
     const all = [];
     (function next() {
-      reader.readEntries(batch => {
-        if (!batch.length) return resolve(all);
-        all.push(...batch);
-        next();
-      }, reject);
+      reader.readEntries(batch => { if (!batch.length) return resolve(all); all.push(...batch); next(); }, reject);
     })();
   });
 }
@@ -572,22 +343,9 @@ async function collectDirEntry(entry, path, out) {
   }
 }
 
-// One toast per game folder, aggregated progress across all its files.
+// One toast per game folder, progress summed over its files.
 async function uploadFolder(gameName, entries, emuId) {
-  const toastId = `toast-${Date.now()}-${Math.random()}`;
-  const toastEl = document.createElement('div');
-  toastEl.className = 'toast';
-  toastEl.innerHTML = `
-    <div class="toast-row">
-      <span class="toast-name" title="${escHtml(gameName)}">📁 ${escHtml(gameName)}</span>
-      <span class="toast-state" id="${toastId}-state">0%</span>
-    </div>
-    <div class="progress-bar"><div class="progress-fill" id="${toastId}-fill" style="width:0"></div></div>
-  `;
-  document.getElementById('toasts').appendChild(toastEl);
-  const stateEl = document.getElementById(`${toastId}-state`);
-  const fillEl  = document.getElementById(`${toastId}-fill`);
-
+  const t = progressToast(gameName);
   const total = entries.reduce((s, x) => s + x.file.size, 0);
   let doneBytes = 0;
   for (let i = 0; i < entries.length; i++) {
@@ -595,24 +353,16 @@ async function uploadFolder(gameName, entries, emuId) {
     try {
       await uploadEntry(file, relpath, emuId, i === entries.length - 1, loaded => {
         const pct = total ? Math.min(100, Math.round((doneBytes + loaded) / total * 100)) : 0;
-        fillEl.style.width = pct + '%';
-        stateEl.textContent = `${pct}% · ${i + 1}/${entries.length} files`;
+        t.progress(pct, `${pct}%, file ${i + 1} of ${entries.length}`);
       });
     } catch (err) {
-      stateEl.textContent = `Failed: ${String(err).slice(0, 60)}`;
-      stateEl.style.color = 'var(--danger)';
-      fillEl.style.background = 'var(--danger)';
-      setTimeout(() => toastEl.remove(), 8000);
+      t.fail(`Failed: ${String(err.message || err).slice(0, 60)}`);
       return;
     }
     doneBytes += file.size;
   }
-  stateEl.textContent = 'Done';
-  stateEl.style.color = 'var(--success)';
-  fillEl.style.width = '100%';
-  fillEl.style.background = 'var(--success)';
+  t.done();
   if (activeEmu && activeEmu.id === emuId) loadRoms(emuId);
-  setTimeout(() => toastEl.remove(), 3000);
 }
 
 function uploadEntry(file, relpath, emuId, isLast, onProgress) {
@@ -638,59 +388,47 @@ function uploadEntry(file, relpath, emuId, isLast, onProgress) {
 document.addEventListener('dragenter', e => {
   if (!e.dataTransfer.types.includes('Files')) return;
   dragDepth++;
-  document.getElementById('drag-overlay').classList.add('visible');
+  $('drag-overlay').classList.add('visible');
 });
-document.addEventListener('dragleave', e => {
+document.addEventListener('dragleave', () => {
   dragDepth--;
-  if (dragDepth <= 0) { dragDepth = 0; document.getElementById('drag-overlay').classList.remove('visible'); }
+  if (dragDepth <= 0) { dragDepth = 0; $('drag-overlay').classList.remove('visible'); }
 });
 document.addEventListener('dragover', e => e.preventDefault());
 document.addEventListener('drop', e => {
   e.preventDefault();
   dragDepth = 0;
-  document.getElementById('drag-overlay').classList.remove('visible');
-  const hasFiles = e.dataTransfer.files.length ||
-    Array.from(e.dataTransfer.items || []).some(i => i.kind === 'file');
-  if (!hasFiles) return;
-  handleDrop(e);
+  $('drag-overlay').classList.remove('visible');
+  const hasFiles = e.dataTransfer.files.length || Array.from(e.dataTransfer.items || []).some(i => i.kind === 'file');
+  if (hasFiles) handleDrop(e);
 });
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-// For values inside single-quoted JS strings in inline handlers: JS-escape
-// backslashes + single quotes first, THEN HTML-escape (so a ROM name with
-// a double quote can't terminate the onclick attribute either).
+// Values inside single-quoted JS strings in inline handlers: JS-escape
+// backslashes and quotes first, then HTML-escape.
 function escAttr(s) { return escHtml(String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")); }
 
-// ── Overlay modal ──────────────────────────────────────────────────────────────
-//
-// One card per bezel SLOT, not one preview. An emulator is sometimes several
-// machines — mGBA runs Game Boy, Game Boy Color and Game Boy Advance behind one
-// tile — and each may have its own frame, because their pictures are different
-// shapes (10:9 against 3:2). The empty slots are drawn too: dropping a PNG for
-// one console and being shown nothing about the others gives no way to tell a
-// silent success from a silent failure.
-//
-// Everything here goes through this addon's own /api/overlays passthrough. The
-// core owns assets/overlays and decides the filename; the addon never writes
-// there (api: 1). See docs/SECURITY.md rule 5.
+// ── Bezels ──────────────────────────────────────────────────────────────────
+// One card per bezel slot: an emulator can run several machines (mGBA: Game Boy,
+// Color, Advance) and each may have its own frame. Empty slots are drawn too, so a
+// silent success and a silent failure look different. Everything goes through this
+// addon's /api/overlays passthrough; the core owns assets/overlays (api: 1).
 
 function openOverlayModal() {
   if (!activeEmu) return;
-  document.getElementById('om-title').textContent = `Overlay — ${activeEmu.platform}`;
-  document.getElementById('overlay-modal').classList.add('open');
+  $('om-title').textContent = `Bezels for ${activeEmu.platform}`;
+  $('overlay-modal').classList.add('open');
   omLoadSlots();
 }
 
-function closeOverlayModal() {
-  document.getElementById('overlay-modal').classList.remove('open');
-}
+function closeOverlayModal() { $('overlay-modal').classList.remove('open'); }
 
 async function omLoadSlots() {
-  const box = document.getElementById('om-slots');
-  box.innerHTML = '<div class="om-hint">Reading…</div>';
-  document.getElementById('om-hint').textContent = '';
+  const box = $('om-slots');
+  box.innerHTML = '<div class="empty">Reading</div>';
+  $('om-hint').textContent = '';
   let slots, note = '';
   try {
     const res = await fetch(`api/overlays/${encodeURIComponent(activeEmu.id)}/slots`);
@@ -700,86 +438,62 @@ async function omLoadSlots() {
     note = body.note || '';
   } catch (e) {
     box.innerHTML = '';
-    document.getElementById('om-hint').textContent = String(e.message || e);
+    $('om-hint').textContent = String(e.message || e);
     return;
   }
   box.innerHTML = slots.map(omSlotCard).join('');
-  // The hint only earns its place when there is something to explain. A core
-  // that predates per-console bezels is exactly that: the player sees one slot
-  // where another box shows four, and without this line there is nothing to
-  // say why — they would read it as the feature being broken.
-  document.getElementById('om-hint').textContent = note
-    ? note
-    : slots.length > 1
-      ? `${activeEmu.platform} runs ${slots.length - 1} consoles — each may have its own frame`
-      : '';
+  // Only when there is something to explain: a core older than per-console
+  // bezels shows one slot where another box shows four.
+  $('om-hint').textContent = note || (slots.length > 1
+    ? `${activeEmu.platform} runs ${slots.length - 1} consoles; each can have its own frame.` : '');
 }
 
 /** The core answers a refusal with a sentence; a generic "failed" wastes it. */
 async function omDetail(res) {
-  try {
-    const body = await res.json();
-    if (body && body.detail) return body.detail;
-  } catch { /* not JSON — fall through */ }
+  try { const body = await res.json(); if (body && body.detail) return body.detail; } catch {}
   return `Request failed (${res.status})`;
 }
 
 function omSlotCard(s) {
-  const key   = s.console || '';
-  const id    = `om-slot-${key || 'system'}`;
-  const cache = Date.now();
-  // Root-absolute: Caddy routes /assets/* straight to the core, same origin.
+  const key = s.console || '';
+  const id = `om-slot-${key || 'system'}`;
   const thumb = s.present
-    ? `<img src="/assets/overlays/${encodeURIComponent(s.filename)}?t=${cache}" alt="">`
-    : `<div class="om-empty">empty</div>`;
-  const badge = s.level === 'system'
-    ? `<span class="om-badge sys">all of ${escHtml(activeEmu.id)}</span>`
-    : `<span class="om-badge ${s.present ? 'on' : 'off'}">${s.present ? 'in place' : 'no bezel'}</span>`;
-  // The measured hole, because the ratio is the thing a frame can be wrong
-  // about: a 1:1 frame over a 3:2 console covers the game's edges. When the
-  // pack declares what the machine renders at, the two are compared here —
-  // at upload time, where a mismatch costs a re-upload, not in game where it
-  // costs a frame over the picture and nothing on screen to say why.
+    ? `<img src="/assets/overlays/${encodeURIComponent(s.filename)}?t=${Date.now()}" alt="">`
+    : 'No bezel';
+  const state = s.level === 'system'
+    ? `<span class="slot-state">Every ${escHtml(activeEmu.platform)} game</span>`
+    : `<span class="slot-state ${s.present ? 'on' : ''}">${s.present ? 'In place' : 'Not set'}</span>`;
+  // The measured hole, because the ratio is what a frame can be wrong about: a 1:1
+  // frame over a 3:2 console covers the game's edges. Compared here, at upload time.
   const bad = s.present && ratioMismatch(s.ratio, s.expected_ratio);
   const meta = s.present
-    ? `${escHtml(s.filename)} — hole ${s.hole.w}×${s.hole.h} (${escHtml(s.ratio)})`
+    ? `${escHtml(s.filename)}, hole ${s.hole.w}×${s.hole.h} (${escHtml(s.ratio)})`
       + (s.expected_ratio
-         ? (bad ? ` ⚠ the ${escHtml(s.label)} draws ${escHtml(s.expected_ratio)}`
-                : ` — matches the machine (${escHtml(s.expected_ratio)})`)
+         ? (bad ? ` <span class="warn">The ${escHtml(s.label)} draws ${escHtml(s.expected_ratio)}: this frame will cover part of the game.</span>`
+                : `, matches the machine`)
          : '')
-    : `${escHtml(s.filename)} — drop a PNG to create it`
-      + (s.expected_ratio ? ` (${escHtml(s.expected_ratio)})` : '');
-  const remove = s.present && s.level === 'console'
-    ? `<button class="om-rm" onclick="omRemoveConsole('${escAttr(s.console)}')">Remove</button>`
-    : s.present
-      ? `<button class="om-rm" onclick="omRemoveSystem()">Remove</button>`
-      : '';
-
-  return `<div class="om-slot ${s.present ? '' : 'empty'}" id="${id}">
-    <div class="om-slot-thumb">${thumb}</div>
-    <div class="om-slot-main">
-      <div class="om-slot-head">
-        <span class="om-slot-name">${escHtml(s.label)}</span>${badge}
-      </div>
-      <div class="om-slot-meta">${meta}</div>
-      <div class="om-slot-actions">
-        <label class="om-mini"
-               ondragover="omDzOver(event,this)" ondragleave="omDzLeave(this)"
-               ondrop="omDzDrop(event,this,'${escAttr(key)}')">
-          Drop a PNG or click to browse
-          <input type="file" accept="image/png,image/jpeg,image/webp"
-                 onchange="omFileInput(this,'${escAttr(key)}')">
+    : `${escHtml(s.filename)}${s.expected_ratio ? `, the machine draws ${escHtml(s.expected_ratio)}` : ''}`;
+  const remove = s.present
+    ? `<button class="btn danger" onclick="${s.level === 'console' ? `omRemoveConsole('${escAttr(s.console)}')` : 'omRemoveSystem()'}">${I('trash','sm')}Remove</button>`
+    : '';
+  return `<div class="slot ${s.present ? '' : 'empty'}" id="${id}">
+    <div class="slot-thumb">${thumb}</div>
+    <div class="slot-main">
+      <div class="slot-name">${escHtml(s.label)}${state}</div>
+      <div class="slot-meta">${meta}</div>
+      <div class="slot-actions">
+        <label class="btn" ondragover="omDzOver(event,this)" ondragleave="omDzLeave(this)" ondrop="omDzDrop(event,this,'${escAttr(key)}')">
+          ${I('upload','sm')}${s.present ? 'Replace' : 'Add a PNG'}
+          <input type="file" accept="image/png,image/jpeg,image/webp" onchange="omFileInput(this,'${escAttr(key)}')">
         </label>
         ${remove}
       </div>
-      <div class="om-slot-msg" id="${id}-msg"></div>
+      <div class="slot-msg" id="${id}-msg"></div>
     </div>
   </div>`;
 }
 
-/** "809:540" vs "3:2" — the measured ratio is reduced from pixels, so equal
- *  machines rarely produce equal STRINGS. Compare the values, with the same
- *  1.5% slack a one-pixel rounding on a 1080-tall hole amounts to. */
+/** "809:540" vs "3:2": compare values, with the 1.5 % slack of a one-pixel rounding. */
 function ratioMismatch(measured, expected) {
   if (!measured || !expected) return false;
   const val = r => { const [w, h] = String(r).split(':').map(Number); return w > 0 && h > 0 ? w / h : NaN; };
@@ -789,69 +503,59 @@ function ratioMismatch(measured, expected) {
 }
 
 function omMsg(consoleId, text, kind) {
-  const el = document.getElementById(`om-slot-${consoleId || 'system'}-msg`);
-  if (el) { el.textContent = text; el.className = `om-slot-msg ${kind || ''}`; }
+  const el = $(`om-slot-${consoleId || 'system'}-msg`);
+  if (el) { el.textContent = text; el.className = `slot-msg ${kind || ''}`; }
 }
-
 function omDzOver(e, el) { e.preventDefault(); el.classList.add('hover'); }
 function omDzLeave(el) { el.classList.remove('hover'); }
 function omDzDrop(e, el, consoleId) {
-  e.preventDefault();
+  e.preventDefault(); e.stopPropagation();
   el.classList.remove('hover');
   const file = e.dataTransfer.files[0];
   if (file) omUpload(file, consoleId);
 }
-function omFileInput(input, consoleId) {
-  const file = input.files[0];
-  if (file) omUpload(file, consoleId);
-  input.value = '';
-}
+function omFileInput(input, consoleId) { const file = input.files[0]; if (file) omUpload(file, consoleId); input.value = ''; }
 
 async function omUpload(file, consoleId) {
-  omMsg(consoleId, 'Uploading…', '');
+  omMsg(consoleId, 'Uploading', '');
   const form = new FormData();
   form.append('file', file);
   const url = consoleId
     ? `api/overlays/${encodeURIComponent(activeEmu.id)}/consoles/${encodeURIComponent(consoleId)}`
     : `api/overlays/${encodeURIComponent(activeEmu.id)}`;
   let res;
-  try {
-    res = await fetch(url, { method: 'POST', body: form });
-  } catch {
-    omMsg(consoleId, 'Could not reach the server.', 'err');
-    return;
-  }
-  if (!res.ok) {
-    // The 422 says a bezel needs a transparent area for the game to show
-    // through. That sentence is the whole value of the check — an image with
-    // no hole is a rectangle painted over the game, and nothing else on this
-    // screen would ever have told the player why.
-    omMsg(consoleId, await omDetail(res), 'err');
-    return;
-  }
+  try { res = await fetch(url, { method: 'POST', body: form }); }
+  catch { omMsg(consoleId, "Couldn't reach the box.", 'err'); return; }
+  // A 422 says a bezel needs a transparent area for the game to show through.
+  if (!res.ok) { omMsg(consoleId, await omDetail(res), 'err'); return; }
   omMsg(consoleId, 'Saved.', 'ok');
   omLoadSlots();
 }
 
 async function omRemoveConsole(consoleId) {
-  if (!confirm('Remove this console\u2019s bezel? Its games fall back to the system one.')) return;
-  const res = await fetch(
-    `api/overlays/${encodeURIComponent(activeEmu.id)}/consoles/${encodeURIComponent(consoleId)}`,
-    { method: 'DELETE' });
+  if (!confirm('Remove this console’s bezel? Its games fall back to the system one.')) return;
+  const res = await fetch(`api/overlays/${encodeURIComponent(activeEmu.id)}/consoles/${encodeURIComponent(consoleId)}`, { method: 'DELETE' });
   if (res.ok) omLoadSlots(); else omMsg(consoleId, await omDetail(res), 'err');
 }
 
 async function omRemoveSystem() {
-  if (!confirm('Remove the overlay for this emulator?')) return;
+  if (!confirm('Remove the bezel for this system?')) return;
   const res = await fetch(`api/overlays/${encodeURIComponent(activeEmu.id)}`, { method: 'DELETE' });
   if (res.ok) omLoadSlots(); else omMsg('', await omDetail(res), 'err');
 }
 
-document.getElementById('overlay-modal').addEventListener('click', e => {
-  if (e.target === document.getElementById('overlay-modal')) closeOverlayModal();
-});
+$('drag-icon').innerHTML = I('upload');
+$('om-close').innerHTML = I('close', 'sm');
+$('overlay-modal').addEventListener('click', e => { if (e.target === $('overlay-modal')) closeOverlayModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeOverlayModal(); });
 
-loadEmulators();
+// Open straight on a system: the one in the URL, else the first with games.
+loadEmulators().then(() => {
+  const q = new URLSearchParams(location.search).get('system');
+  const first = emulators.find(e => e.id === q) || emulators.find(e => e.romCount) || emulators[0];
+  if (first) selectEmulator(first.id);
+  else $('page').innerHTML = '<div class="page-body"><div class="empty">No system on this box yet.</div></div>';
+});
 </script>
 </body>
 </html>

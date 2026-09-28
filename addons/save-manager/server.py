@@ -250,7 +250,8 @@ def list_games(emu_id: str):
     for g in games_list:
         g["sizeHuman"] = fmt_size(g["size"])
         has_icon = g.pop("_icon") is not None
-        g["icon"] = (f"/api/games/{emu_id}/icon?key={quote(g['key'])}"
+        # Relative: behind Caddy the page lives under the addon's path (/saves/).
+        g["icon"] = (f"api/games/{emu_id}/icon?key={quote(g['key'])}"
                      if has_icon else None)
     return {
         "available": base is not None,
@@ -333,7 +334,8 @@ def game_icon(emu_id: str, key: str):
                 _tga_cache.clear()
             _tga_cache[stamp] = png
         return Response(png, media_type="image/png")
-    return FileResponse(str(icon), media_type="image/png")
+    media = {".webp": "image/webp", ".jpg": "image/jpeg"}.get(icon.suffix.lower(), "image/png")
+    return FileResponse(str(icon), media_type=media)
 
 
 @app.get("/api/saves/{emu_id}/download")

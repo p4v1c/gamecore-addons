@@ -3,176 +3,88 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GameCore — RPCS3 Manager</title>
+<title>GameCore PS3 settings</title>
+<link rel="stylesheet" href="gamecore-ui.css">
 <link rel="stylesheet" href="gamecore-nav.css">
+<script src="gamecore-icons.js"></script>
 <script src="gamecore-nav.js" defer></script>
 <style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0b0d12; --surface:#13161e; --surface2:#1c202c; --surface3:#252a38;
-  --border:rgba(255,255,255,0.07); --text:#dde1ed; --text2:#7d8499;
-  --accent:#a855f7; --danger:#f04040; --success:#40d480; --warn:#fbbf24;
-  --radius:10px; --sidebar-w:290px;
-  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+.rail-body { flex: 1; min-width: 0; }
+.rail-body .rail-name { display: block; }
+.rail-meta { font-size: 14px; color: var(--ink-3); display: flex; gap: 8px; align-items: center; }
+.rail-meta .ok { color: var(--ok); }
+
+.tabs { display: flex; padding: 0 32px; border-bottom: 1px solid var(--line); }
+.tab { border: 0; background: none; padding: 12px 4px; margin-right: 24px; font-size: 16px; font-weight: 600;
+  color: var(--ink-3); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent-soft); }
+
+.status { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; margin-top: 16px; padding: 14px 16px;
+  border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); font-size: 15px; color: var(--ink-2); }
+.status.custom { border-color: rgba(95, 211, 154, 0.35); }
+.status.custom b { color: var(--ok); }
+.status .btn { margin-left: auto; }
+
+.set { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 8px 16px; }
+.opt { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: var(--r-control); background: var(--surface); }
+.opt.differs { box-shadow: inset 3px 0 0 var(--ok); }
+.opt.dirty { border-color: var(--accent-soft); }
+.opt-name { font-size: 16px; font-weight: 600; }
+.opt-hint, .opt-global { font-size: 14px; color: var(--ink-3); }
+.opt select, .opt input[type=number] { min-height: 36px; padding: 0 10px; border-radius: var(--r-control);
+  border: 1px solid var(--line-strong); background: var(--bg); font-size: 15px; max-width: 220px; }
+.opt input[type=number] { width: 96px; }
+
+.switch { position: relative; width: 44px; height: 24px; flex-shrink: 0; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.switch span { position: absolute; inset: 0; border-radius: 12px; background: var(--hover); pointer-events: none; }
+.switch span::before { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--ink-3); transition: transform .15s; }
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::before { transform: translateX(20px); background: #fff; }
+.switch input:focus-visible + span { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
+.switch input:disabled + span { opacity: .4; }
+
+.save-bar { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  margin-top: 24px; padding: 12px 0; background: var(--bg); border-top: 1px solid var(--line); }
+.save-bar .pending { font-size: 15px; color: var(--ink-2); margin-right: auto; }
+
+.patch { padding: 14px 16px; }
+.patch + .patch { border-top: 1px solid var(--line); }
+.patch-name { font-size: 16px; font-weight: 600; display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; }
+.patch-name .on { font-size: 14px; color: var(--ok); }
+.patch-meta { font-size: 14px; color: var(--ink-3); margin-top: 2px; }
+.patch-notes { font-size: 15px; color: var(--ink-2); margin-top: 6px; max-width: 80ch; }
+.versions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.version { display: flex; align-items: center; gap: 12px; padding: 6px 8px 6px 12px; border-radius: var(--r-control);
+  background: var(--raised); font-size: 15px; }
+.version.other { opacity: .55; }
+.version .tag { color: var(--accent-soft); }
+details.disclosure { margin-top: 32px; }
+
+@media (max-width: 760px) {
+  .tabs { padding: 0 16px; }
+  .set { grid-template-columns: 1fr; }
+  .rail-meta { display: none; }
 }
-html,body{height:100%;overflow:hidden}
-body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex;font-size:14px}
-body.gc-nav-present #sidebar, body.gc-nav-present #main{height:calc(100vh - 44px)}
-::-webkit-scrollbar{width:6px;height:6px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:3px}
-
-#sidebar{width:var(--sidebar-w);min-width:var(--sidebar-w);height:100vh;background:var(--surface);
-  border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-.sidebar-header{padding:22px 20px 14px;border-bottom:1px solid var(--border);flex-shrink:0}
-.sidebar-logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:#fff}
-.sidebar-logo svg{color:var(--accent)}
-.sidebar-sub{margin-top:4px;font-size:11px;color:var(--text2);letter-spacing:.5px;text-transform:uppercase}
-.game-list{flex:1;overflow-y:auto;padding:8px 0}
-.game-item{display:flex;align-items:center;gap:12px;padding:9px 16px;cursor:pointer;
-  border-left:3px solid transparent;transition:background .15s,border-color .15s;user-select:none}
-.game-item:hover{background:var(--surface2)}
-.game-item.active{background:var(--surface2);border-left-color:var(--accent)}
-.game-item.active .game-title{color:#fff}
-.game-icon{width:58px;height:32px;border-radius:5px;object-fit:cover;background:var(--surface3);flex-shrink:0}
-.game-info{flex:1;min-width:0}
-.game-title{font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.game-serial{font-size:11px;color:var(--text2);margin-top:1px;display:flex;gap:6px;align-items:center}
-.dot{width:6px;height:6px;border-radius:50%;background:var(--success);flex-shrink:0}
-
-#main{flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
-.top-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;
-  padding:16px 28px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
-.top-left{display:flex;align-items:baseline;gap:12px;min-width:0}
-.top-title{font-size:18px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.top-meta{font-size:12px;color:var(--text2);white-space:nowrap}
-.tabs{display:flex;gap:4px;flex-shrink:0}
-.tab{padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text2);
-  border:1px solid transparent;transition:all .15s}
-.tab:hover{background:var(--surface2);color:var(--text)}
-.tab.active{background:rgba(168,85,247,.14);color:#d8b4fe;border-color:rgba(168,85,247,.35)}
-
-.content{flex:1;overflow-y:auto;padding:26px 28px}
-#welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--text2);text-align:center}
-#welcome h2{font-size:22px;color:var(--text);font-weight:700}
-#welcome p{font-size:14px;max-width:360px;line-height:1.7}
-
-.banner{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 16px;
-  border-radius:var(--radius);margin-bottom:20px;font-size:13px}
-.banner.global{background:rgba(255,255,255,.04);border:1px solid var(--border);color:var(--text2)}
-.banner.custom{background:rgba(64,212,128,.07);border:1px solid rgba(64,212,128,.25);color:#86efac}
-
-.group{margin-bottom:26px}
-.group-title{font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text2);
-  margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
-.fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px 22px}
-.field{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 12px;
-  border-radius:8px;background:var(--surface);border:1px solid var(--border)}
-.field.dirty{border-color:rgba(168,85,247,.5)}
-.field.differs{background:rgba(168,85,247,.05)}
-.f-label{font-size:13px;min-width:0}
-.f-name{color:var(--text);font-weight:500}
-.f-hint{font-size:11px;color:var(--text2);margin-top:2px}
-.f-default{font-size:10px;color:var(--text2);opacity:.8;margin-top:2px}
-select,input[type=number]{background:var(--surface3);color:var(--text);border:1px solid var(--border);
-  border-radius:7px;padding:6px 9px;font-size:13px;font-family:var(--font);max-width:220px}
-select:focus,input:focus{outline:1px solid var(--accent)}
-input[type=number]{width:90px}
-.switch{position:relative;width:40px;height:22px;flex-shrink:0;cursor:pointer}
-.switch input{display:none}
-.slider{position:absolute;inset:0;background:var(--surface3);border-radius:22px;transition:.2s}
-.slider::before{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:#8a91a5;
-  top:3px;left:3px;transition:.2s}
-.switch input:checked + .slider{background:var(--accent)}
-.switch input:checked + .slider::before{transform:translateX(18px);background:#fff}
-.switch input:disabled + .slider{opacity:.35;cursor:not-allowed}
-
-.save-bar{position:sticky;bottom:0;display:flex;gap:10px;justify-content:flex-end;align-items:center;
-  padding:14px 0 2px;background:linear-gradient(transparent,var(--bg) 30%)}
-.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:var(--radius);
-  border:none;cursor:pointer;font-size:13px;font-weight:600;transition:opacity .15s,transform .1s}
-.btn:active{transform:scale(.97)}
-.btn:disabled{opacity:.4;cursor:not-allowed}
-.btn-primary{background:var(--accent);color:#fff}
-.btn-primary:hover:not(:disabled){opacity:.88}
-.btn-outline{background:transparent;color:var(--text);border:1px solid var(--border)}
-.btn-outline:hover{background:var(--surface2)}
-.btn-danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}
-.btn-danger:hover{background:var(--danger);color:#fff}
-
-.patch{padding:13px 16px;border-radius:var(--radius);
-  background:var(--surface);border:1px solid var(--border);margin-bottom:10px}
-.p-name{font-size:14px;font-weight:600;color:#fff;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.p-meta{font-size:11px;color:var(--text2);margin-top:3px;display:flex;flex-wrap:wrap;gap:10px}
-.p-notes{font-size:12px;color:var(--text2);margin-top:6px;line-height:1.5}
-.p-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;background:var(--surface3);color:var(--text2)}
-.p-badge.on{background:rgba(64,212,128,.15);color:var(--success)}
-.p-versions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.p-vrow{display:flex;align-items:center;gap:10px;background:var(--surface2);border:1px solid var(--border);
-  border-radius:8px;padding:7px 12px;font-size:12px}
-.p-vrow.off-version{opacity:.5}
-.p-vrow .vtag{font-size:9px;font-weight:700;letter-spacing:.5px;color:var(--accent)}
-details.generic{margin-top:26px}
-details.generic summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--text2);padding:10px 0;user-select:none}
-details.generic summary:hover{color:var(--text)}
-
-.drop-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:22px;text-align:center;
-  color:var(--text2);cursor:pointer;transition:.2s;display:flex;flex-direction:column;align-items:center;
-  gap:8px;margin-bottom:22px}
-.drop-zone:hover,.drop-zone.hover{border-color:var(--accent);background:rgba(168,85,247,.05);color:var(--text)}
-.drop-zone input{display:none}
-
-#toasts{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:10px;z-index:200;width:340px}
-.toast{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--success);
-  border-radius:var(--radius);padding:12px 14px;font-size:13px;box-shadow:0 8px 32px rgba(0,0,0,.5);animation:slideIn .2s ease}
-.toast.error{border-left-color:var(--danger)}
-@keyframes slideIn{from{transform:translateX(120%);opacity:0}to{transform:none;opacity:1}}
-.spinner{width:32px;height:32px;border:3px solid var(--surface3);border-top-color:var(--accent);
-  border-radius:50%;animation:spin .6s linear infinite;margin:60px auto}
-@keyframes spin{to{transform:rotate(360deg)}}
-.empty{padding:50px 0;text-align:center;color:var(--text2);font-size:13px}
 </style>
 </head>
 <body>
-
-<aside id="sidebar">
-  <div class="sidebar-header">
-    <div class="sidebar-logo">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M4 17l8 4 8-4M4 12l8 4 8-4M4 7l8-4 8 4-8 4-8-4z"/>
-      </svg>
-      RPCS3 Manager
+<div class="app">
+  <aside class="rail">
+    <div class="rail-head">
+      <div class="rail-title">PS3 games</div>
+      <div class="rail-sub" id="rail-sub">Loading</div>
     </div>
-    <div class="sidebar-sub" id="sidebar-sub">Loading…</div>
-  </div>
-  <div class="game-list" id="game-list"><div class="spinner"></div></div>
-</aside>
-
-<main id="main">
-  <div class="top-bar" id="top-bar" style="display:none">
-    <div class="top-left">
-      <span class="top-title" id="top-title"></span>
-      <span class="top-meta" id="top-meta"></span>
-    </div>
-    <div class="tabs">
-      <div class="tab active" id="tab-config" onclick="showTab('config')">Configuration</div>
-      <div class="tab" id="tab-patches" onclick="showTab('patches')">Patches</div>
-      <div class="tab" id="btn-remove" onclick="removeGame()" title="Remove this game from RPCS3's list"
-           style="color:var(--danger)">🗑</div>
-    </div>
-  </div>
-  <div class="content" id="content">
-    <div id="welcome">
-      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".3">
-        <path d="M4 17l8 4 8-4M4 12l8 4 8-4M4 7l8-4 8 4-8 4-8-4z"/>
-      </svg>
-      <h2>RPCS3 Manager</h2>
-      <p>Select a PS3 game on the left to edit its custom configuration and manage its patches — no need to leave the couch.</p>
-    </div>
-  </div>
-</main>
-
-<div id="toasts"></div>
+    <nav class="rail-list" id="game-list" aria-label="Games"><div class="spinner"></div></nav>
+  </aside>
+  <main class="page" id="page">
+    <div class="spinner"></div>
+  </main>
+</div>
+<div class="toasts" id="toasts" role="status"></div>
 
 <script>
 let games = [], schema = null, globals = {};
@@ -180,107 +92,117 @@ let active = null, tab = 'config';
 let cfgState = { exists: false, values: {}, dirty: {} };
 
 const $ = id => document.getElementById(id);
-
-function toast(msg, error = false) {
-  const el = document.createElement('div');
-  el.className = 'toast' + (error ? ' error' : '');
-  el.textContent = msg;
-  $('toasts').appendChild(el);
-  setTimeout(() => el.remove(), error ? 6000 : 3000);
-}
-
-function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
-
-async function jget(url){const r=await fetch(url);if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||r.status);return r.json()}
+const I = (n, c) => gcIcon(n, c);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
+function toast(m, err){const e=document.createElement('div');e.className='toast'+(err?' error':'');e.textContent=m;$('toasts').appendChild(e);setTimeout(()=>e.remove(),err?6000:3500)}
+async function jget(u){const r=await fetch(u);if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||r.status);return r.json()}
 async function jsend(url,method,body){
   const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:body!==undefined?JSON.stringify(body):undefined});
   if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||r.status);return r.json()
 }
+const bodyError = (what, e) => `<div class="empty error">${what}: ${esc(e.message)}</div>`;
 
-// ── Games sidebar ────────────────────────────────────────────────────────────
+// ── games rail ───────────────────────────────────────────────────────────────
 async function loadGames() {
   try {
     [games, {schema, globals} = {}] = await Promise.all([jget('api/games'), jget('api/schema')]);
-  } catch (e) { $('game-list').innerHTML = `<div class="empty">⚠ ${escHtml(e.message)}</div>`; return; }
-  $('sidebar-sub').textContent = `${games.length} PS3 game${games.length !== 1 ? 's' : ''}`;
+  } catch (e) { $('game-list').innerHTML = bodyError("Couldn't list the games", e); return; }
+  $('rail-sub').textContent = plural(games.length, 'game');
   $('game-list').innerHTML = games.map(g => `
-    <div class="game-item" id="game-${g.serial}" onclick="selectGame('${g.serial}')">
-      <img class="game-icon" src="api/games/${g.serial}/icon" loading="lazy" onerror="this.style.visibility='hidden'">
-      <div class="game-info">
-        <div class="game-title" title="${escHtml(g.title)}">${escHtml(g.title)}</div>
-        <div class="game-serial">${g.serial}${g.has_custom_config ? '<span class="dot" title="Custom config"></span>' : ''}
-          ${g.missing ? '<span style="color:var(--warn)" title="Game folder deleted — leftover games.yml entry">⚠ missing</span>' : ''}</div>
-      </div>
-    </div>`).join('') || '<div class="empty">No PS3 game found</div>';
+    <button class="rail-item" id="game-${g.serial}" onclick="selectGame('${g.serial}')"
+            ${active && g.serial === active.serial ? 'aria-current="true"' : ''}>
+      <img class="rail-thumb" src="api/games/${g.serial}/icon" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+      <span class="rail-body">
+        <span class="rail-name" title="${esc(g.title)}">${esc(g.title)}</span>
+        <span class="rail-meta">${g.serial}
+          ${g.has_custom_config ? '<span class="ok">Own settings</span>' : ''}
+          ${g.missing ? '<span class="tag" title="The game folder is gone, only its entry in the list remains">Missing</span>' : ''}</span>
+      </span>
+    </button>`).join('') || '<div class="empty">No PS3 game found. Add one with the ROM manager.</div>';
 
-  // deep links: ?game=BCES01670&tab=patches (used by external UIs / bookmarks)
-  const qp = new URLSearchParams(location.search);
-  const g = qp.get('game');
-  if (g && !active && games.some(x => x.serial === g)) {
+  // deep links: ?game=BCES01670&tab=patches (used by external UIs and bookmarks)
+  if (!active) {
+    const qp = new URLSearchParams(location.search);
+    const g = games.find(x => x.serial === qp.get('game')) || games[0];
     if (qp.get('tab') === 'patches') tab = 'patches';
-    selectGame(g);
+    if (g) selectGame(g.serial);
+    else $('page').innerHTML = '<div class="page-body"><div class="empty">Nothing to set up yet.</div></div>';
   }
 }
 
-async function selectGame(serial) {
+function selectGame(serial) {
   active = games.find(g => g.serial === serial);
-  document.querySelectorAll('.game-item').forEach(el => el.classList.remove('active'));
-  $(`game-${serial}`).classList.add('active');
-  $('top-bar').style.display = '';
-  $('top-title').textContent = active.title;
-  $('top-meta').textContent = `${active.serial} · v${active.versions.join(', v') || '?'}`;
+  document.querySelectorAll('.rail-item').forEach(el => el.removeAttribute('aria-current'));
+  $(`game-${serial}`)?.setAttribute('aria-current', 'true');
+  const v = active.versions.length ? `, version ${active.versions.join(', ')}` : '';
+  $('page').innerHTML = `
+    <header class="page-head">
+      <div>
+        <h1 class="page-title">${esc(active.title)}</h1>
+        <div class="page-meta">${active.serial}${esc(v)}</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn danger" onclick="removeGame()" title="Remove this game from RPCS3's list">${I('trash','sm')}Remove</button>
+      </div>
+    </header>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-config" onclick="showTab('config')">Settings</button>
+      <button class="tab" role="tab" id="tab-patches" onclick="showTab('patches')">Patches</button>
+    </div>
+    <div class="page-body" id="content"></div>`;
   showTab(tab);
 }
 
 function showTab(t) {
   tab = t;
-  $('tab-config').classList.toggle('active', t === 'config');
-  $('tab-patches').classList.toggle('active', t === 'patches');
-  if (!active) return;
+  $('tab-config').setAttribute('aria-selected', t === 'config');
+  $('tab-patches').setAttribute('aria-selected', t === 'patches');
+  history.replaceState(null, '', `?game=${active.serial}${t === 'patches' ? '&tab=patches' : ''}`);
   if (t === 'config') loadConfig(); else loadPatches();
 }
 
 async function removeGame() {
   if (!active) return;
   if (!confirm(`Remove "${active.title}" (${active.serial}) from RPCS3's game list?\n\n` +
-      'This deletes its games.yml entry (backup kept). The game folder and your save files are NOT touched.')) return;
+      'Its games.yml entry is deleted and a backup is kept. The game folder and your saves are not touched.')) return;
   let data = false;
   if (active.source === 'hdd' ||
-      confirm('Also delete its installed updates / game data in dev_hdd0/game?\n\n' +
-              'OK = delete updates too · Cancel = keep them')) data = true;
+      confirm('Also delete its installed updates and game data in dev_hdd0/game?\n\n' +
+              'OK deletes the updates too. Cancel keeps them.')) data = true;
   if (active.source === 'hdd' &&
-      !confirm('This is an HDD game: removing its dev_hdd0 data removes the game itself (saves are kept). Continue?')) return;
+      !confirm('This game is installed on the PS3 drive: removing its dev_hdd0 data removes the game itself. Saves are kept. Continue?')) return;
   try {
     const r = await fetch(`api/games/${active.serial}?data=${data}`, { method: 'DELETE' });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.detail || r.status);
-    toast(`${active.title} removed from the list${d.removed_data.length ? ` (+ ${d.removed_data.join(', ')})` : ''}`);
+    toast(`Removed ${active.title} from the list${d.removed_data.length ? `, with ${d.removed_data.join(', ')}` : ''}`);
     active = null;
-    $('top-bar').style.display = 'none';
-    $('content').innerHTML = '<div class="empty">Game removed — pick another one on the left.</div>';
+    $('page').innerHTML = '<div class="page-body"><div class="empty">Game removed. Pick another one.</div></div>';
     loadGames();
-  } catch (e) { toast(`Remove failed: ${e.message}`, true); }
+  } catch (e) { toast(`Couldn't remove it: ${e.message}`, true); }
 }
 
-// ── Configuration tab ────────────────────────────────────────────────────────
+// ── settings tab ─────────────────────────────────────────────────────────────
 async function loadConfig() {
   $('content').innerHTML = '<div class="spinner"></div>';
   let data;
   try { data = await jget(`api/games/${active.serial}/config`); }
-  catch (e) { $('content').innerHTML = `<div class="empty">⚠ ${escHtml(e.message)}</div>`; return; }
+  catch (e) { $('content').innerHTML = bodyError("Couldn't read the settings", e); return; }
   cfgState = { exists: data.exists, values: data.values, dirty: {} };
   renderConfig();
 }
 
 function pkgZoneHTML() {
   return `
-    <label class="drop-zone" id="pkg-dz" style="padding:16px;margin-bottom:18px"
-           ondragover="event.preventDefault();this.classList.add('hover')"
-           ondragleave="this.classList.remove('hover')" ondrop="dropPkg(event)">
-      <span style="font-size:13px;font-weight:600">📦 Install a .pkg (game update / DLC)</span>
-      <span style="font-size:12px">Runs RPCS3 on the box's screen to install it — no need to open the emulator yourself</span>
-      <input type="file" accept=".pkg" onchange="uploadPkg(this.files[0]);this.value=''">
-    </label>`;
+    <div class="drops" style="margin-top:24px">
+      <label class="drop" id="pkg-dz" ondragover="event.preventDefault();this.classList.add('hover')"
+             ondragleave="this.classList.remove('hover')" ondrop="dropPkg(event)">
+        ${I('download')}
+        <span><b>Install an update or DLC</b>Drop a .pkg file here. RPCS3 opens on the TV and installs it.</span>
+        <input type="file" accept=".pkg" onchange="uploadPkg(this.files[0]);this.value=''">
+      </label>
+    </div>`;
 }
 
 function dropPkg(e) {
@@ -292,7 +214,7 @@ function dropPkg(e) {
 
 async function uploadPkg(file) {
   if (!file) return;
-  if (!file.name.toLowerCase().endsWith('.pkg')) { toast('Not a .pkg file', true); return; }
+  if (!file.name.toLowerCase().endsWith('.pkg')) { toast('That is not a .pkg file', true); return; }
   const dz = $('pkg-dz');
   if (dz) dz.style.opacity = '.5';
   const form = new FormData();
@@ -301,11 +223,11 @@ async function uploadPkg(file) {
     const r = await fetch('api/pkg/install', { method: 'POST', body: form });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.detail || r.status);
-    toast(`Uploading done — RPCS3 is installing ${file.name} on the box screen…`);
+    toast(`Uploaded. RPCS3 is installing ${file.name} on the TV`);
     pollPkg();
   } catch (e) {
     if (dz) dz.style.opacity = '1';
-    toast(`Install failed: ${e.message}`, true);
+    toast(`Couldn't install it: ${e.message}`, true);
   }
 }
 
@@ -315,55 +237,56 @@ async function pollPkg() {
     if (s.state === 'running') { setTimeout(pollPkg, 3000); return; }
     const dz = $('pkg-dz'); if (dz) dz.style.opacity = '1';
     if (s.state === 'done') {
-      toast(`Installed: ${s.installed.join(', ')} — game list refreshed`);
+      toast(`Installed ${s.installed.join(', ')}`);
       loadGames();
-      if (active) loadConfig();
+      if (active && tab === 'config') loadConfig();
     } else if (s.state === 'error') {
-      toast(`Install failed: ${s.error}`, true);
+      toast(`Couldn't install it: ${s.error}`, true);
     }
   } catch (e) { setTimeout(pollPkg, 3000); }
 }
 
 function renderConfig() {
-  const banner = cfgState.exists
-    ? `<div class="banner custom"><span>● Custom configuration — this game overrides the global settings.</span>
-         <button class="btn btn-danger" onclick="resetConfig()">Reset to global</button></div>`
-    : `<div class="banner global"><span>○ No custom configuration — showing global values. Saving a change creates
-         <b>config_${active.serial}.yml</b> from the global settings (like RPCS3 does).</span></div>`;
+  const status = cfgState.exists
+    ? `<div class="status custom"><span><b>This game has its own settings.</b> They replace the global ones.</span>
+         <button class="btn danger" onclick="resetConfig()">${I('restore','sm')}Use global settings</button></div>`
+    : `<div class="status"><span>This game uses the global settings. Change one below and it gets its own
+         <code>config_${active.serial}.yml</code>, like RPCS3 does.</span></div>`;
 
   const groups = schema.map(grp => `
-    <div class="group">
-      <div class="group-title">${grp.label}</div>
-      <div class="fields">${grp.fields.map(fieldHTML).join('')}</div>
-    </div>`).join('');
+    <section class="section">
+      <div class="section-head"><h2 class="section-title">${esc(grp.label)}</h2></div>
+      <div class="set">${grp.fields.map(fieldHTML).join('')}</div>
+    </section>`).join('');
 
-  $('content').innerHTML = pkgZoneHTML() + banner + groups + `
+  $('content').innerHTML = pkgZoneHTML() + status + groups + `
     <div class="save-bar">
-      <span id="dirty-count" style="font-size:12px;color:var(--text2)"></span>
-      <button class="btn btn-outline" onclick="loadConfig()">Discard</button>
-      <button class="btn btn-primary" id="btn-save" onclick="saveConfig()" disabled>💾 Save</button>
+      <span class="pending" id="dirty-count"></span>
+      <button class="btn" onclick="loadConfig()">Discard</button>
+      <button class="btn primary" id="btn-save" onclick="saveConfig()" disabled>${I('save','sm')}Save</button>
     </div>`;
 }
 
 function fieldHTML(f) {
   const cur = current(f.id), glob = globals[f.id];
-  const defTxt = glob !== undefined ? `global: ${glob}` : '';
   let ctrl;
   if (f.type === 'enum') {
-    ctrl = `<select onchange="setVal('${f.id}',this.value)">${f.options.map(o =>
-      `<option ${o === cur ? 'selected' : ''}>${escHtml(o)}</option>`).join('')}</select>`;
+    ctrl = `<select aria-label="${esc(f.key)}" onchange="setVal('${f.id}',this.value)">${f.options.map(o =>
+      `<option ${o === cur ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   } else if (f.type === 'bool') {
-    ctrl = `<label class="switch"><input type="checkbox" ${cur === 'true' ? 'checked' : ''}
-      onchange="setVal('${f.id}',this.checked?'true':'false')"><span class="slider"></span></label>`;
+    ctrl = `<label class="switch"><input type="checkbox" aria-label="${esc(f.key)}" ${cur === 'true' ? 'checked' : ''}
+      onchange="setVal('${f.id}',this.checked?'true':'false')"><span></span></label>`;
   } else {
-    ctrl = `<input type="number" min="${f.min}" max="${f.max}" value="${escHtml(cur ?? '')}"
+    ctrl = `<input type="number" aria-label="${esc(f.key)}" min="${f.min}" max="${f.max}" value="${esc(cur ?? '')}"
       onchange="setVal('${f.id}',this.value)">`;
   }
   const differs = cfgState.exists && glob !== undefined && cur !== undefined && cur !== glob;
-  return `<div class="field ${differs ? 'differs' : ''}" id="field-${cssId(f.id)}">
-    <div class="f-label"><div class="f-name">${escHtml(f.key)}</div>
-      ${f.hint ? `<div class="f-hint">${escHtml(f.hint)}</div>` : ''}
-      <div class="f-default">${escHtml(defTxt)}</div></div>
+  return `<div class="opt ${differs ? 'differs' : ''}" id="field-${cssId(f.id)}">
+    <div>
+      <div class="opt-name">${esc(f.key)}</div>
+      ${f.hint ? `<div class="opt-hint">${esc(f.hint)}</div>` : ''}
+      ${glob !== undefined ? `<div class="opt-global">Global: ${esc(glob)}</div>` : ''}
+    </div>
     ${ctrl}</div>`;
 }
 
@@ -375,95 +298,96 @@ function setVal(id, value) {
   else cfgState.dirty[id] = value;
   const n = Object.keys(cfgState.dirty).length;
   $('btn-save').disabled = n === 0;
-  $('dirty-count').textContent = n ? `${n} change${n > 1 ? 's' : ''} pending` : '';
+  $('dirty-count').textContent = n ? `${plural(n, 'change')} not saved` : '';
   $(`field-${cssId(id)}`).classList.toggle('dirty', id in cfgState.dirty);
+}
+
+async function afterConfigChange(msg) {
+  toast(msg);
+  await loadGames();
+  loadConfig();
 }
 
 async function saveConfig() {
   const n = Object.keys(cfgState.dirty).length;
   try {
     const r = await jsend(`api/games/${active.serial}/config`, 'PUT', { values: cfgState.dirty });
-    toast(r.created ? `Custom config created (${n} change${n > 1 ? 's' : ''})` : `Saved — ${n} change${n > 1 ? 's' : ''} (backup kept)`);
     active.has_custom_config = true;
-    await loadGames(); $(`game-${active.serial}`)?.classList.add('active');
-    loadConfig();
-  } catch (e) { toast(`Save failed: ${e.message}`, true); }
+    afterConfigChange(r.created ? `Own settings created with ${plural(n, 'change')}` : `Saved ${plural(n, 'change')}, backup kept`);
+  } catch (e) { toast(`Couldn't save: ${e.message}`, true); }
 }
 
 async function resetConfig() {
-  if (!confirm(`Delete the custom configuration of ${active.title}?\nA backup will be kept next to it.`)) return;
+  if (!confirm(`Delete the own settings of ${active.title}?\nA backup is kept next to them.`)) return;
   try {
     await jsend(`api/games/${active.serial}/config`, 'DELETE');
-    toast('Custom config removed — game uses global settings again');
     active.has_custom_config = false;
-    await loadGames(); $(`game-${active.serial}`)?.classList.add('active');
-    loadConfig();
-  } catch (e) { toast(`Reset failed: ${e.message}`, true); }
+    afterConfigChange('Back on the global settings');
+  } catch (e) { toast(`Couldn't reset: ${e.message}`, true); }
 }
 
-// ── Patches tab ──────────────────────────────────────────────────────────────
+// ── patches tab ──────────────────────────────────────────────────────────────
 async function loadPatches() {
   $('content').innerHTML = '<div class="spinner"></div>';
   let data;
   try { data = await jget(`api/games/${active.serial}/patches`); }
-  catch (e) { $('content').innerHTML = `<div class="empty">⚠ ${escHtml(e.message)}</div>`; return; }
+  catch (e) { $('content').innerHTML = bodyError("Couldn't read the patches", e); return; }
   const patches = data.patches, cur = data.current_version;
   window._patches = patches;
 
-  const dz = `
-    <label class="drop-zone" id="patch-dz" ondragover="event.preventDefault();this.classList.add('hover')"
-           ondragleave="this.classList.remove('hover')" ondrop="dropPatch(event)">
-      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-      </svg>
-      <span style="font-size:13px;font-weight:600">Import a patch file (.yml)</span>
-      <span style="font-size:12px">Community patches from the RPCS3 wiki / Discord — validated then merged into imported_patch.yml</span>
-      <input type="file" accept=".yml,.yaml" onchange="uploadPatch(this.files[0]);this.value=''">
-    </label>
-    <div style="display:flex;justify-content:flex-end;margin:-12px 0 20px">
-      <button class="btn btn-outline" id="btn-dl-official" onclick="downloadOfficial(this)">
-        ⬇ Update official patch database (rpcs3.net)
-      </button>
+  const head = `
+    <div class="drops" style="margin-top:24px">
+      <label class="drop" id="patch-dz" ondragover="event.preventDefault();this.classList.add('hover')"
+             ondragleave="this.classList.remove('hover')" ondrop="dropPatch(event)">
+        ${I('upload')}
+        <span><b>Import a patch file</b>Drop a .yml from the RPCS3 wiki or Discord. It is checked, then added to imported_patch.yml.</span>
+        <input type="file" accept=".yml,.yaml" onchange="uploadPatch(this.files[0]);this.value=''">
+      </label>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <button class="btn" id="btn-dl-official" onclick="downloadOfficial(this)">${I('restore','sm')}Update the official patch list</button>
     </div>`;
 
-  // one card per patch name; inside, one toggle per game version.
-  // Works with GLOBAL indices into `patches` so the toggles stay correct.
-  function cards(idxList) {
+  // One block per patch name; inside, one switch per game version.
+  // Works with GLOBAL indices into `patches` so the switches stay correct.
+  function blocks(idxList) {
     const groups = new Map();
     idxList.forEach(i => {
       const name = patches[i].name;
       if (!groups.has(name)) groups.set(name, []);
       groups.get(name).push(i);
     });
-    return [...groups.entries()].map(([name, idxs]) => {
+    return `<div class="list">${[...groups.entries()].map(([name, idxs]) => {
       const first = patches[idxs[0]];
       const nOn = idxs.filter(i => patches[i].enabled).length;
       const meta = [
-        first.author && `by ${escHtml(first.author)}`,
-        first.patch_version && `patch v${escHtml(first.patch_version)}`,
-        escHtml(first.files.join(' + ')),
-      ].filter(Boolean).join('<span style="opacity:.4"> · </span>');
+        first.author && `by ${esc(first.author)}`,
+        first.patch_version && `patch ${esc(first.patch_version)}`,
+        esc(first.files.join(', ')),
+      ].filter(Boolean).join(', ');
+      const manyTitles = new Set(idxs.map(i => patches[i].title)).size > 1;  // e.g. a collection disc
       const rows = idxs.map(i => {
         const p = patches[i];
-        const isCur = p.version === cur;
+        const isCur = p.version === cur && p.version !== 'All';
         return `
-          <div class="p-vrow ${p.version_match ? '' : 'off-version'}"
-               title="${p.version_match ? 'Enable / disable for this game version' : 'This game version is not installed'}">
-            <span>${p.version === 'All' ? 'all versions' : 'game v' + escHtml(p.version)}</span>
-            ${p.patch_version !== first.patch_version ? `<span style="opacity:.7">patch v${escHtml(p.patch_version)}</span>` : ''}
-            ${isCur && p.version !== 'All' ? '<span class="vtag">CURRENT</span>' : ''}
-            <label class="switch"><input type="checkbox" ${p.enabled ? 'checked' : ''}
-              onchange="togglePatch(${i},this)"><span class="slider"></span></label>
+          <div class="version ${p.version_match ? '' : 'other'}"
+               title="${p.version_match ? 'Turn on or off for this game version' : 'This game version is not installed'}">
+            ${manyTitles ? `<span>${esc(p.title)}</span>` : ''}
+            <span${manyTitles ? ' style="color:var(--ink-3)"' : ''}>${p.version === 'All' ? 'All versions' : 'Version ' + esc(p.version)}</span>
+            ${p.patch_version !== first.patch_version ? `<span style="color:var(--ink-3)">patch ${esc(p.patch_version)}</span>` : ''}
+            ${isCur ? '<span class="tag">Installed</span>' : ''}
+            <label class="switch"><input type="checkbox" aria-label="${esc(name)}, ${esc(p.version)}" ${p.enabled ? 'checked' : ''}
+              onchange="togglePatch(${i},this)"><span></span></label>
           </div>`;
       }).join('');
       return `
         <div class="patch">
-          <div class="p-name">${escHtml(name)} ${nOn ? `<span class="p-badge on">ENABLED${idxs.length > 1 ? ' ×' + nOn : ''}</span>` : ''}</div>
-          <div class="p-meta">${meta}</div>
-          ${first.notes ? `<div class="p-notes">${escHtml(first.notes)}</div>` : ''}
-          <div class="p-versions">${rows}</div>
+          <div class="patch-name">${esc(name)}${nOn ? `<span class="on">On${idxs.length > 1 ? ` for ${nOn}` : ''}</span>` : ''}</div>
+          <div class="patch-meta">${meta}</div>
+          ${first.notes ? `<div class="patch-notes">${esc(first.notes)}</div>` : ''}
+          <div class="versions">${rows}</div>
         </div>`;
-    }).join('');
+    }).join('')}</div>`;
   }
 
   const allIdx = patches.map((_, i) => i);
@@ -471,24 +395,21 @@ async function loadPatches() {
   const genericIdx = allIdx.filter(i => patches[i].generic);
   const genericOn = genericIdx.filter(i => patches[i].enabled).length;
 
-  let html = dz;
-  if (!patches.length) {
-    html += `<div class="empty">No patch found for ${active.serial}.</div>`;
-  } else {
-    html += specificIdx.length ? cards(specificIdx)
-      : `<div class="empty">No patch specific to ${active.serial}.</div>`;
-    if (genericIdx.length) {
-      html += `
-        <details class="generic" ${genericOn ? 'open' : ''}>
-          <summary>Generic patches — matched by module hash, listed for every game
-            (${genericIdx.length}${genericOn ? `, ${genericOn} enabled` : ''}) ▾</summary>
-          <div style="font-size:12px;color:var(--text2);margin-bottom:12px">
-            These target specific modules (e.g. SPU MLAA) across many titles. RPCS3 only applies
-            them if the hash matches — enabling one that names another game has no effect here.
-          </div>
-          ${cards(genericIdx)}
-        </details>`;
-    }
+  let html = head + `<section class="section"><div class="section-head"><h2 class="section-title">For this game</h2>
+    <span class="section-count">${specificIdx.length || ''}</span></div>`;
+  html += specificIdx.length ? blocks(specificIdx)
+    : `<div class="empty">No patch made for ${active.serial}.</div>`;
+  html += '</section>';
+  if (genericIdx.length) {
+    html += `
+      <details class="disclosure" ${genericOn ? 'open' : ''}>
+        <summary>${I('patch')}Generic patches, ${genericIdx.length}${genericOn ? `, ${genericOn} on` : ''}</summary>
+        <div class="disclosure-body">
+          <p class="lede">These target a module shared by many games, such as SPU MLAA. RPCS3 applies one only
+            when its hash matches, so turning on a patch that names another game does nothing here.</p>
+          ${blocks(genericIdx)}
+        </div>
+      </details>`;
   }
   $('content').innerHTML = html;
 }
@@ -501,9 +422,9 @@ async function togglePatch(i, input) {
       hash: p.hash, name: p.name, title: p.title,
       serial_key: p.serial_key, version: p.version, enabled: input.checked,
     });
-    toast(`${p.name} ${input.checked ? 'enabled' : 'disabled'} — restart the game to apply`);
+    toast(`${p.name} ${input.checked ? 'on' : 'off'}. Restart the game to apply it`);
     loadPatches();
-  } catch (e) { input.checked = !input.checked; input.disabled = false; toast(`Failed: ${e.message}`, true); }
+  } catch (e) { input.checked = !input.checked; input.disabled = false; toast(`Couldn't change it: ${e.message}`, true); }
 }
 
 function dropPatch(e) {
@@ -514,16 +435,17 @@ function dropPatch(e) {
 }
 
 async function downloadOfficial(btn) {
-  btn.disabled = true; btn.textContent = '⏳ Downloading…';
+  const label = btn.innerHTML;
+  btn.disabled = true; btn.textContent = 'Downloading';
   try {
     const r = await fetch('api/patches/download-official', { method: 'POST' });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.detail || r.status);
-    toast(`Official database updated — ${d.patches} patches (backup kept)`);
+    toast(`Official list updated, ${d.patches} patches, backup kept`);
     loadPatches();
   } catch (e) {
-    btn.disabled = false; btn.textContent = '⬇ Update official patch database (rpcs3.net)';
-    toast(`Download failed: ${e.message}`, true);
+    btn.disabled = false; btn.innerHTML = label;
+    toast(`Couldn't download it: ${e.message}`, true);
   }
 }
 
@@ -535,9 +457,9 @@ async function uploadPatch(file) {
     const r = await fetch('api/patches/upload', { method: 'POST', body: form });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.detail || r.status);
-    toast(`${file.name}: ${data.merged} patch(es) merged into ${data.file}`);
+    toast(`${file.name}: ${plural(data.merged, 'patch', 'patches')} added to ${data.file}`);
     loadPatches();
-  } catch (e) { toast(`Import failed: ${e.message}`, true); }
+  } catch (e) { toast(`Couldn't import it: ${e.message}`, true); }
 }
 
 loadGames();

@@ -3,350 +3,249 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GameCore — Save Manager</title>
+<title>GameCore saves</title>
+<link rel="stylesheet" href="gamecore-ui.css">
 <link rel="stylesheet" href="gamecore-nav.css">
+<script src="gamecore-icons.js"></script>
 <script src="gamecore-nav.js" defer></script>
 <style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0b0d12; --surface:#13161e; --surface2:#1c202c; --surface3:#252a38;
-  --border:rgba(255,255,255,0.07); --text:#dde1ed; --text2:#7d8499;
-  --accent:#22c55e; --danger:#f04040; --warn:#fbbf24; --radius:10px;
-  --sidebar-w:270px; --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+.game-head { cursor: pointer; }
+.game-head:hover { background: var(--hover); }
+.game .chev { color: var(--ink-3); transition: transform .15s; }
+.game.open .chev { transform: rotate(90deg); }
+.game-files { display: none; background: var(--bg); border-top: 1px solid var(--line); }
+.game.open .game-files { display: block; }
+.game-files .row { padding-left: 80px; }
+.game + .game { border-top: 1px solid var(--line); }
+.rail-item.is-empty .rail-name { color: var(--ink-3); font-weight: 400; }
+@media (max-width: 760px) {
+  .game-files .row { padding-left: 16px; }
+  .game-head { flex-wrap: nowrap; }
+  .game-head .row-actions { width: auto; }
+  .game-head .chev, .game-head .btn-label { display: none; }
+  .game-head .btn { padding: 0; width: 36px; justify-content: center; }
 }
-html,body{height:100%;overflow:hidden}
-body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex;font-size:14px}
-body.gc-nav-present #sidebar, body.gc-nav-present #main{height:calc(100vh - 44px)}
-::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:3px}
-
-#sidebar{width:var(--sidebar-w);min-width:var(--sidebar-w);height:100vh;background:var(--surface);
-  border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-.sidebar-header{padding:22px 20px 14px;border-bottom:1px solid var(--border)}
-.sidebar-logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:#fff}
-.sidebar-logo svg{color:var(--accent)}
-.sidebar-sub{margin-top:4px;font-size:11px;color:var(--text2);letter-spacing:.5px;text-transform:uppercase}
-.emu-list{flex:1;overflow-y:auto;padding:8px 0}
-.emu-item{display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;border-left:3px solid transparent;user-select:none}
-.emu-item:hover{background:var(--surface2)}
-.emu-item.active{background:var(--surface2);border-left-color:var(--accent)}
-.emu-item.disabled{opacity:.35;cursor:default}
-.emu-item.active .emu-name{color:#fff}
-.emu-name{font-weight:500;font-size:13px}
-.emu-counts{font-size:11px;color:var(--text2);margin-top:1px}
-
-#main{flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
-.top-bar{display:flex;align-items:center;gap:14px;padding:16px 28px;border-bottom:1px solid var(--border);background:var(--surface)}
-.top-title{font-size:18px;font-weight:700;color:#fff}
-.top-meta{font-size:12px;color:var(--text2)}
-.content{flex:1;overflow-y:auto;padding:22px 28px}
-
-.section-title{font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text2);
-  margin:24px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
-.section-title:first-child{margin-top:0}
-
-/* game rows */
-.game{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;overflow:hidden}
-.game-head{display:flex;align-items:center;gap:14px;padding:12px 15px;cursor:pointer;user-select:none}
-.game-head:hover{background:var(--surface2)}
-.game-cover{width:44px;height:44px;border-radius:8px;object-fit:cover;background:var(--surface3);flex-shrink:0}
-.game-cover.ph{display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--text2)}
-.game-info{flex:1;min-width:0}
-.game-name{font-size:14px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.game-sub{font-size:11px;color:var(--text2);margin-top:2px}
-.chev{color:var(--text2);font-size:18px;transition:transform .15s}
-.game.open .chev{transform:rotate(90deg)}
-.game-files{border-top:1px solid var(--border);padding:6px 12px 12px;display:none}
-.game.open .game-files{display:block}
-
-.file{display:flex;align-items:center;gap:12px;padding:9px 6px;border-bottom:1px solid rgba(255,255,255,0.04)}
-.file:last-child{border-bottom:none}
-.f-icon{font-size:15px;width:20px;text-align:center;flex-shrink:0}
-.f-body{flex:1;min-width:0}
-.f-name{font-size:12.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.f-meta{font-size:10.5px;color:var(--text2);margin-top:1px}
-.kind-state .f-name::after{content:" · save state";color:var(--warn);font-size:10px}
-.f-actions{display:flex;gap:6px;flex-shrink:0}
-.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;border-radius:7px;border:none;cursor:pointer;font-size:11.5px;font-weight:600;font-family:var(--font)}
-.btn:active{transform:scale(.96)}
-.btn-dl{background:rgba(34,197,94,.13);color:var(--accent);border:1px solid rgba(34,197,94,.3)}
-.btn-dl:hover{background:rgba(34,197,94,.2)}
-.btn-del{background:transparent;color:var(--danger);border:1px solid rgba(240,64,64,.35)}
-.btn-del:hover{background:var(--danger);color:#fff}
-
-.note{font-size:12px;color:var(--text2);background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.2);
-  border-radius:8px;padding:10px 13px;margin-bottom:12px;line-height:1.5}
-.restore{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:6px}
-.drop-zone{flex:1;min-width:220px;border:2px dashed var(--border);border-radius:var(--radius);padding:12px;text-align:center;
-  color:var(--text2);cursor:pointer;transition:.2s;font-size:12px}
-.drop-zone:hover,.drop-zone.hover{border-color:var(--accent);background:rgba(34,197,94,.05);color:var(--text)}
-.drop-zone b{color:var(--text);font-weight:600}
-.drop-zone input{display:none}
-
-.empty{padding:18px;text-align:center;color:var(--text2);font-size:13px}
-.guide{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px}
-.guide summary{padding:12px 15px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text);user-select:none}
-.guide summary:hover{background:var(--surface2)}
-.guide-body{padding:4px 16px 16px;font-size:12.5px;line-height:1.6;color:var(--text)}
-.guide-body .g-sec{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text2);margin:14px 0 6px}
-.guide-body table{border-collapse:collapse;width:100%}
-.guide-body td{padding:5px 10px 5px 0;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.04)}
-.guide-body td:first-child{white-space:nowrap;color:var(--text2);width:110px}
-.guide-body code{background:var(--surface3);padding:1px 6px;border-radius:5px;font-size:11.5px;word-break:break-all}
-.guide-body ul{margin:0;padding-left:18px}
-.guide-body li{margin:3px 0}
-.guide-body pre{background:var(--surface3);padding:9px 12px;border-radius:8px;overflow-x:auto;font-size:11.5px;margin:6px 0}
-.guide-body a{color:var(--accent)}
-.g-note{color:var(--text2);font-size:11px}
-.top-actions{margin-left:auto;display:flex;gap:8px}
-.spinner{width:30px;height:30px;border:3px solid var(--surface3);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;margin:50px auto}
-@keyframes spin{to{transform:rotate(360deg)}}
-#welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--text2);text-align:center}
-#welcome h2{font-size:22px;color:var(--text);font-weight:700}
-#welcome p{font-size:14px;max-width:400px;line-height:1.7}
-#toasts{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:10px;z-index:200;width:340px}
-.toast{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius);
-  padding:12px 14px;font-size:13px;box-shadow:0 8px 32px rgba(0,0,0,.5);animation:slideIn .2s ease}
-.toast.error{border-left-color:var(--danger)}
-@keyframes slideIn{from{transform:translateX(120%);opacity:0}to{transform:none;opacity:1}}
 </style>
 </head>
 <body>
-
-<aside id="sidebar">
-  <div class="sidebar-header">
-    <div class="sidebar-logo">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-        <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
-      </svg>
-      Save Manager
+<div class="app">
+  <aside class="rail">
+    <div class="rail-head">
+      <div class="rail-title">Saves</div>
+      <div class="rail-sub" id="rail-sub">Loading</div>
     </div>
-    <div class="sidebar-sub" id="sidebar-sub">Loading…</div>
-  </div>
-  <div class="emu-list" id="emu-list"><div class="spinner"></div></div>
-</aside>
-
-<main id="main">
-  <div class="top-bar" id="top-bar" style="display:none">
-    <span class="top-title" id="top-title"></span>
-    <span class="top-meta" id="top-meta"></span>
-    <span class="top-actions" id="top-actions"></span>
-  </div>
-  <div class="content" id="content">
-    <div id="welcome">
-      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".3">
-        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-        <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
-      </svg>
-      <h2>Save Manager</h2>
-      <p>Pick a system on the left. Your games appear with their box art —
-         click a game to see and manage the save files that make it up.</p>
-    </div>
-  </div>
-</main>
-<div id="toasts"></div>
+    <nav class="rail-list" id="emu-list" aria-label="Systems"><div class="spinner"></div></nav>
+  </aside>
+  <main class="page" id="page">
+    <div class="spinner"></div>
+  </main>
+</div>
+<div class="toasts" id="toasts" role="status"></div>
 
 <script>
 let emulators = [], active = null, data = null, openKeys = new Set();
 const $ = id => document.getElementById(id);
+const I = (n, c) => gcIcon(n, c);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-// For values injected inside single-quoted JS strings in inline handlers:
-// JS-escape backslashes and single quotes FIRST, then HTML-escape — otherwise
-// a name like "Assassin's Creed.sav" breaks the onclick (or injects JS).
+// Values injected inside single-quoted JS strings in inline handlers: JS-escape
+// backslashes and quotes first, then HTML-escape, or "Assassin's Creed.sav" breaks the handler.
 const attr = s => esc(String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
 function toast(m, err){const e=document.createElement('div');e.className='toast'+(err?' error':'');e.textContent=m;$('toasts').appendChild(e);setTimeout(()=>e.remove(),err?6000:3500)}
 async function jget(u){const r=await fetch(u);if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||r.status);return r.json()}
 
 async function loadEmulators() {
   try { emulators = await jget('api/emulators'); }
-  catch (e) { $('emu-list').innerHTML = `<div class="empty">⚠ ${esc(e.message)}</div>`; return; }
-  const avail = emulators.filter(e => e.available).length;
-  $('sidebar-sub').textContent = `${avail} systems`;
+  catch (e) { $('emu-list').innerHTML = `<div class="empty error">Couldn't list the systems: ${esc(e.message)}</div>`; return; }
+  const avail = emulators.filter(e => e.available);
+  $('rail-sub').textContent = `${plural(avail.length, 'system')} with saves`;
   $('emu-list').innerHTML = emulators.map(e => `
-    <div class="emu-item ${e.available ? '' : 'disabled'}" ${e.available ? `onclick="selectEmu('${e.id}')"` : ''} id="emu-${e.id}">
-      <div>
-        <div class="emu-name">${esc(e.label)}</div>
-        <div class="emu-counts">${e.available ? `${e.games} game${e.games!==1?'s':''} · ${e.entries} file${e.entries!==1?'s':''}` : 'no data'}</div>
-      </div>
-    </div>`).join('');
+    <button class="rail-item ${e.available && !e.games && !e.entries ? 'is-empty' : ''}" id="emu-${e.id}" ${e.available ? `onclick="selectEmu('${e.id}')"` : 'disabled'}
+            ${e.id === active ? 'aria-current="true"' : ''}>
+      <span class="rail-name">${esc(e.label)}</span>
+      <span class="rail-count">${e.available ? e.games : 'none'}</span>
+    </button>`).join('');
 }
 
 async function selectEmu(id) {
   active = id; openKeys = new Set();
-  document.querySelectorAll('.emu-item').forEach(el => el.classList.remove('active'));
-  $(`emu-${id}`).classList.add('active');
-  $('top-bar').style.display = '';
-  $('top-title').textContent = emulators.find(e => e.id === id).label;
+  document.querySelectorAll('.rail-item').forEach(el => el.removeAttribute('aria-current'));
+  $(`emu-${id}`)?.setAttribute('aria-current', 'true');
+  history.replaceState(null, '', `?emu=${encodeURIComponent(id)}`);
   await load();
 }
 
 async function load() {
-  $('content').innerHTML = '<div class="spinner"></div>';
+  $('page').innerHTML = '<div class="spinner"></div>';
   try { data = await jget(`api/games/${active}`); }
-  catch (e) { $('content').innerHTML = `<div class="empty">⚠ ${esc(e.message)}</div>`; return; }
-  $('top-meta').textContent = data.base || '';
-  $('top-actions').innerHTML = (data.games.length || data.other.length)
-    ? `<button class="btn btn-dl" onclick="dlAll()" title="One zip with every save, state and card of this system">⬇ Full backup</button>` : '';
+  catch (e) { $('page').innerHTML = `<div class="page-body"><div class="empty error">Couldn't read the saves: ${esc(e.message)}</div></div>`; return; }
   render();
 }
 
+function fileIcon(e) {
+  return e.in_card || e.card ? 'card' : e.is_dir ? 'folder' : e.kind === 'state' ? 'state' : 'save';
+}
+
 function fileHTML(e) {
-  const icon = e.in_card ? '🎴' : e.is_dir ? '📁' : e.card ? '🗃️' : e.kind === 'state' ? '⏺' : '💾';
-  const meta = e.in_card
-    ? `${e.sizeHuman} · inside ${esc(e.in_card)}`
-    : `${e.sizeHuman}${e.is_dir ? ' · folder → .zip' : ''}`;
+  const meta = e.in_card ? `${e.sizeHuman}, inside ${esc(e.in_card)}`
+    : `${e.sizeHuman}${e.is_dir ? ', a folder, downloads as .zip' : ''}`;
   let actions;
   if (e.in_card) {
-    // one save inside a memory card: export it or delete it individually
-    actions = `<button class="btn btn-dl" onclick="dlSave('${attr(e.id)}','${attr(e.save_key)}')" title="Export just this game's save (.mcs / .psu / .gci)">⬇ save</button>
-       <button class="btn btn-del" onclick="delSave('${attr(e.id)}','${attr(e.save_key)}','${attr(e.name)}')" title="Delete just this save from the card (the card is backed up first)">✕</button>`;
+    actions = `<button class="btn" onclick="dlSave('${attr(e.id)}','${attr(e.save_key)}')" title="Export just this game's save (.mcs, .psu or .gci)">${I('download','sm')}Export</button>
+       <button class="btn danger icon-only" onclick="delSave('${attr(e.id)}','${attr(e.save_key)}','${attr(e.name)}')" title="Delete this save from the card (the card is backed up first)" aria-label="Delete">${I('trash','sm')}</button>`;
   } else if (e.card) {
-    // whole-card download + inject one game's save into this card
     const ci = e.id.split('/')[0];
-    actions = `<button class="btn btn-dl" onclick="dl('${attr(e.id)}')" title="Download the whole card">⬇</button>
-       <label class="btn btn-dl" title="Add one game's .mcs/.psu/.gci save into this card">➕ save
-         <input type="file" accept=".mcs,.mcr,.psx,.psu,.gci" style="display:none"
-                onchange="inject(this.files[0], ${ci}, '${attr(e.name)}');this.value=''"></label>
-       <button class="btn btn-del" onclick="del('${attr(e.id)}','${attr(e.name)}')" title="Delete the whole card">✕</button>`;
+    actions = `<button class="btn icon-only" onclick="dl('${attr(e.id)}')" title="Download the whole card" aria-label="Download">${I('download','sm')}</button>
+       <label class="btn" title="Add one game's .mcs, .psu or .gci save to this card">${I('plus','sm')}Add a save
+         <input type="file" accept=".mcs,.mcr,.psx,.psu,.gci" onchange="inject(this.files[0], ${ci}, '${attr(e.name)}');this.value=''"></label>
+       <button class="btn danger icon-only" onclick="del('${attr(e.id)}','${attr(e.name)}')" title="Delete the whole card" aria-label="Delete">${I('trash','sm')}</button>`;
   } else {
-    actions = `<button class="btn btn-dl" onclick="dl('${attr(e.id)}')">⬇</button>
-       <button class="btn btn-del" onclick="del('${attr(e.id)}','${attr(e.name)}')">✕</button>`;
+    actions = `<button class="btn icon-only" onclick="dl('${attr(e.id)}')" title="Download" aria-label="Download">${I('download','sm')}</button>
+       <button class="btn danger icon-only" onclick="del('${attr(e.id)}','${attr(e.name)}')" title="Delete" aria-label="Delete">${I('trash','sm')}</button>`;
   }
   return `
-    <div class="file ${e.kind === 'state' ? 'kind-state' : ''}">
-      <div class="f-icon">${icon}</div>
-      <div class="f-body">
-        <div class="f-name">${esc(e.name)}</div>
-        <div class="f-meta">${meta}</div>
+    <div class="row">
+      <span class="row-icon">${I(fileIcon(e))}</span>
+      <div class="row-body">
+        <div class="row-title">${esc(e.name)}</div>
+        <div class="row-meta">${meta}${e.kind === 'state' ? ' <span class="tag">Save state</span>' : ''}</div>
       </div>
-      <div class="f-actions">${actions}</div>
+      <div class="row-actions">${actions}</div>
     </div>`;
 }
 
 function gameHTML(g) {
-  const open = openKeys.has(g.key);
   const cover = g.icon
-    ? `<img class="game-cover" src="${g.icon}" loading="lazy" onerror="this.classList.add('ph');this.removeAttribute('src');this.textContent='🎮'">`
-    : `<div class="game-cover ph">🎮</div>`;
+    ? `<img class="cover" src="${g.icon}" alt="" loading="lazy" onerror="this.outerHTML='<span class=&quot;cover&quot;>'+gcIcon('gamepad')+'</span>'">`
+    : `<span class="cover">${I('gamepad')}</span>`;
+  const parts = [plural(g.saves, 'save')];
+  if (g.states) parts.push(plural(g.states, 'save state'));
+  parts.push(g.sizeHuman);
   return `
-    <div class="game ${open ? 'open' : ''}">
-      <div class="game-head" onclick="toggle('${attr(g.key)}')">
+    <div class="game ${openKeys.has(g.key) ? 'open' : ''}">
+      <div class="row game-head" onclick="toggle('${attr(g.key)}')">
         ${cover}
-        <div class="game-info">
-          <div class="game-name" title="${esc(g.title)}">${esc(g.title)}</div>
-          <div class="game-sub">${g.saves} save${g.saves!==1?'s':''}${g.states?` · ${g.states} state${g.states!==1?'s':''}`:''} · ${g.sizeHuman}</div>
+        <div class="row-body">
+          <div class="row-title" title="${esc(g.title)}">${esc(g.title)}</div>
+          <div class="row-meta">${parts.join(', ')}</div>
         </div>
-        <button class="btn btn-dl" onclick="event.stopPropagation();dlGame('${attr(g.key)}')"
-                title="Download everything for this game as one zip (restorable on any box via 'Restore full backup')">⬇ all</button>
-        <div class="chev">›</div>
+        <div class="row-actions">
+          <button class="btn" onclick="event.stopPropagation();dlGame('${attr(g.key)}')"
+                  title="One zip with everything for this game. Restore it on any box with Restore a full backup." aria-label="Download">${I('download','sm')}<span class="btn-label">Download</span></button>
+        </div>
+        <span class="chev">${I('chevron')}</span>
       </div>
       <div class="game-files">${g.entries.map(fileHTML).join('')}</div>
     </div>`;
 }
 
 function render() {
-  // one drop zone per distinct (kind, mode) — e.g. Dolphin has folder saves
-  // (Wii) AND memory-card files (GC)
+  const emu = emulators.find(e => e.id === active);
   const seen = new Set();
   const zones = data.collections.filter(c => {
     const k = c.kind + '/' + c.mode;
     return seen.has(k) ? false : (seen.add(k), true);
   });
-  let html = '';
+  const hasAny = data.games.length || data.other.length;
+  let html = `
+    <header class="page-head">
+      <div>
+        <h1 class="page-title">${esc(emu ? emu.label : active)}</h1>
+        <div class="page-meta">${esc(data.base || '')}</div>
+      </div>
+      <div class="page-actions">
+        ${hasAny ? `<button class="btn primary" onclick="dlAll()" title="One zip with every save, save state and memory card of this system">${I('download','sm')}Back up everything</button>` : ''}
+      </div>
+    </header>
+    <div class="page-body">`;
 
-  // Transfer-from-PC guide
-  html += guideHTML(data.guide);
+  html += `<section class="section">
+      <div class="section-head"><h2 class="section-title">Games</h2><span class="section-count">${data.games.length}</span></div>
+      ${data.games.length ? `<div class="list">${data.games.map(gameHTML).join('')}</div>` : '<div class="empty">No save found for this system yet. Play a game once, or restore one below.</div>'}
+    </section>`;
 
-  // Restore
-  html += `<div class="section-title">Restore</div>`;
-  html += `<div class="restore">${zones.map(c => dz(c, c.kind)).join('')}${dzFull()}</div>`;
-
-  // Games
-  html += `<div class="section-title">Games — ${data.games.length}</div>`;
-  html += data.games.length ? data.games.map(gameHTML).join('')
-    : '<div class="empty">No game save detected.</div>';
-
-  // Shared & system files
   if (data.other.length) {
-    html += `<div class="section-title">Shared & system files</div>`;
-    html += `<div class="note">These aren't tied to a single game but are <b>required for saves to work</b>:
-      shared memory cards (PS1/PS2/GameCube hold every game's save) and system data.
-      Back them up too — without the card, no save loads.</div>`;
-    html += `<div class="game open"><div class="game-files" style="display:block;border:1px solid var(--border);border-radius:var(--radius)">
-      ${data.other.map(fileHTML).join('')}</div></div>`;
+    html += `<section class="section">
+      <div class="section-head"><h2 class="section-title">Memory cards and system files</h2><span class="section-count">${data.other.length}</span></div>
+      <p class="note">Not tied to one game, but <b>saves do not load without them</b>: a PS1, PS2 or GameCube card holds every game's save. Back them up too.</p>
+      <div class="list">${data.other.map(fileHTML).join('')}</div>
+    </section>`;
   }
 
-  // Backups — everything a destructive action set aside, restorable in place
+  html += `<section class="section">
+      <div class="section-head"><h2 class="section-title">Restore</h2></div>
+      <div class="drops">${zones.map(dz).join('')}${dzFull()}</div>
+    </section>`;
+
   if (data.backups.length) {
-    html += `<div class="section-title">Backups — ${data.backups.length}</div>`;
-    html += `<div class="note">Taken automatically before every overwrite, restore or delete
-      (the 3 most recent per file are kept). <b>↩ Restore</b> puts one back in place —
-      the current version is itself backed up first, so you can always go back.</div>`;
-    html += `<div class="game open"><div class="game-files" style="display:block;border:1px solid var(--border);border-radius:var(--radius)">
-      ${data.backups.map(bakHTML).join('')}</div></div>`;
+    html += `<section class="section">
+      <div class="section-head"><h2 class="section-title">Automatic backups</h2><span class="section-count">${data.backups.length}</span></div>
+      <p class="note">Taken before every overwrite, restore or delete; the 3 most recent per file are kept. Putting one back backs up the current version first.</p>
+      <div class="list">${data.backups.map(bakHTML).join('')}</div>
+    </section>`;
   }
-  $('content').innerHTML = html;
+
+  html += `<section class="section">${guideHTML(data.guide)}</section></div>`;
+  $('page').innerHTML = html;
 }
 
 function bakHTML(b) {
-  const meta = `${b.when} · ${b.sizeHuman}${b.orig_exists ? '' : ' · <b>original was deleted</b>'}`;
   return `
-    <div class="file">
-      <div class="f-icon">🕓</div>
-      <div class="f-body">
-        <div class="f-name">${esc(b.name)}</div>
-        <div class="f-meta">${meta}</div>
+    <div class="row">
+      <span class="row-icon">${I('history')}</span>
+      <div class="row-body">
+        <div class="row-title">${esc(b.name)}</div>
+        <div class="row-meta">${esc(b.when)}, ${b.sizeHuman}${b.orig_exists ? '' : ', <b>the original was deleted</b>'}</div>
       </div>
-      <div class="f-actions">
-        <button class="btn btn-dl" onclick="restoreBak('${attr(b.id)}','${attr(b.name)}','${attr(b.when)}')"
-                title="Put this backup back in place (the current version is backed up first)">↩ Restore</button>
-        <button class="btn btn-del" onclick="delBak('${attr(b.id)}','${attr(b.name)}')"
-                title="Delete this backup">✕</button>
+      <div class="row-actions">
+        <button class="btn" onclick="restoreBak('${attr(b.id)}','${attr(b.name)}','${attr(b.when)}')" title="Put this backup back in place (the current version is backed up first)">${I('restore','sm')}Put back</button>
+        <button class="btn danger icon-only" onclick="delBak('${attr(b.id)}','${attr(b.name)}')" title="Delete this backup" aria-label="Delete">${I('trash','sm')}</button>
       </div>
     </div>`;
 }
 
-function dz(col, kind) {
-  const warn = kind === 'state' ? ' <b>Version-specific</b> — only restore on the same emulator build.' : '';
+function dropAttrs(onDrop) {
+  return `ondragover="event.preventDefault();this.classList.add('hover')" ondragleave="this.classList.remove('hover')" ondrop="${onDrop}"`;
+}
+
+function dz(col) {
+  const state = col.kind === 'state';
   return `
-    <label class="drop-zone" ondragover="event.preventDefault();this.classList.add('hover')"
-           ondragleave="this.classList.remove('hover')" ondrop="dropUp(event,${col.index})">
-      <b>⬆ Restore a ${kind === 'state' ? 'save state' : 'save'}</b><br>${esc(col.hint)}.${warn}<br>
-      <span style="opacity:.7">A backup is kept before overwriting.</span>
+    <label class="drop" ${dropAttrs(`dropUp(event,${col.index})`)}>
+      ${I('upload')}
+      <span><b>Restore a ${state ? 'save state' : 'save'}</b>${esc(col.hint)}.
+        ${state ? ' Only on the same emulator version.' : ''} The current file is backed up first.</span>
       <input type="file" ${col.mode === 'dirs' ? 'accept=".zip"' : ''} onchange="up(this.files[0],${col.index});this.value=''">
     </label>`;
 }
 
 function dzFull() {
   return `
-    <label class="drop-zone" ondragover="event.preventDefault();this.classList.add('hover')"
-           ondragleave="this.classList.remove('hover')"
-           ondrop="event.preventDefault();this.classList.remove('hover');const f=event.dataTransfer.files[0];if(f)upFull(f)">
-      <b>⬆ Restore full backup</b><br>a "⬇ all" / "Full backup" zip, or one made by the PC export tool.<br>
-      <span style="opacity:.7">Everything it touches is backed up first.</span>
+    <label class="drop" ${dropAttrs(`event.preventDefault();this.classList.remove('hover');const f=event.dataTransfer.files[0];if(f)upFull(f)`)}>
+      ${I('upload')}
+      <span><b>Restore a full backup</b>A zip from Download or Back up everything, or one made by the PC export tool. Everything it replaces is backed up first.</span>
       <input type="file" accept=".zip" onchange="upFull(this.files[0]);this.value=''">
     </label>`;
 }
 
 function guideHTML(g) {
   if (!g) return '';
-  const rows = g.pc.map(l => `<tr><td>${esc(l.os)}</td><td><code>${esc(l.path)}</code>${l.note ? `<div class="g-note">${esc(l.note)}</div>` : ''}</td></tr>`).join('');
+  const rows = g.pc.map(l => `<tr><td>${esc(l.os)}</td><td><code>${esc(l.path)}</code>${l.note ? `<div>${esc(l.note)}</div>` : ''}</td></tr>`).join('');
   const li = xs => xs.map(x => `<li>${esc(x)}</li>`).join('');
   return `
-  <details class="guide">
-    <summary>📥 Transfer saves from a PC — where they live &amp; what to copy</summary>
-    <div class="guide-body">
-      <div class="g-sec">On the PC</div>
+  <details class="disclosure">
+    <summary>${I('book')}Bring saves over from a PC</summary>
+    <div class="disclosure-body">
+      <h4>Where they are on the PC</h4>
       <table>${rows}</table>
-      <div class="g-sec">What to grab</div>
+      <h4>What to copy</h4>
       <ul>${li(g.grab)}</ul>
-      <div class="g-sec">How to restore it here</div>
-      ${esc(g.restore)}
-      ${g.notes.length ? `<div class="g-sec">Good to know</div><ul>${li(g.notes)}</ul>` : ''}
-      <div class="g-sec">Or let the tool do it</div>
-      Download <a href="tools/gamecore-save-export.py" download>gamecore-save-export.py</a>
-      and run it on the PC — it finds the saves of every emulator, packs upload-ready zips
-      and can push them straight to this box:
+      <h4>How to restore it here</h4>
+      <p>${esc(g.restore)}</p>
+      ${g.notes.length ? `<h4>Good to know</h4><ul>${li(g.notes)}</ul>` : ''}
+      <h4>Or let the tool do it</h4>
+      <p>Download <a href="tools/gamecore-save-export.py" download>gamecore-save-export.py</a> and run it on the PC.
+        It finds the saves of every emulator, packs zips this page accepts, and can send them straight to this box:</p>
       <pre>python gamecore-save-export.py --push ${esc(location.origin + location.pathname.replace(/\/$/, ''))} --password …</pre>
     </div>
   </details>`;
@@ -358,77 +257,60 @@ function dlSave(id, serial){ window.location = `api/saves/${active}/download?id=
 function dlGame(key){ window.location = `api/games/${active}/download?key=${encodeURIComponent(key)}`; }
 function dlAll(){ window.location = `api/saves/${active}/download-all`; }
 
-async function delSave(id, saveKey, name) {
+async function send(url, opts, ok, fail) {
+  try {
+    const r = await fetch(url, opts);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || r.status);
+    toast(ok(d)); load(); loadEmulators();
+  } catch (e) { toast(`${fail}: ${e.message}`, true); }
+}
+function form(file) { const f = new FormData(); f.append('file', file); return f; }
+
+function delSave(id, saveKey, name) {
   if (!confirm(`Delete "${name}" from this memory card?\nThe whole card is backed up first.`)) return;
-  try {
-    const r = await fetch(`api/saves/${active}?id=${encodeURIComponent(id)}&save=${encodeURIComponent(saveKey)}`, { method: 'DELETE' });
-    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || r.status);
-    toast(`Deleted from the card (backup kept): ${name}`); load(); loadEmulators();
-  } catch (e) { toast(`Delete failed: ${e.message}`, true); }
+  send(`api/saves/${active}?id=${encodeURIComponent(id)}&save=${encodeURIComponent(saveKey)}`, { method: 'DELETE' },
+       () => `Deleted from the card, backup kept: ${name}`, "Couldn't delete");
 }
-
-async function restoreBak(id, name, when) {
-  if (!confirm(`Restore the backup of "${name}" from ${when}?\nThe current version is backed up first.`)) return;
-  try {
-    const r = await fetch(`api/backups/${active}/restore?id=${encodeURIComponent(id)}`, { method: 'POST' });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.detail || r.status);
-    toast(`Backup restored: ${d.restored}`); load(); loadEmulators();
-  } catch (e) { toast(`Restore failed: ${e.message}`, true); }
+function restoreBak(id, name, when) {
+  if (!confirm(`Put back the backup of "${name}" from ${when}?\nThe current version is backed up first.`)) return;
+  send(`api/backups/${active}/restore?id=${encodeURIComponent(id)}`, { method: 'POST' },
+       d => `Put back: ${d.restored}`, "Couldn't put it back");
 }
-
-async function delBak(id, name) {
-  if (!confirm(`Delete this backup of "${name}"?\nThis can't be undone (it's the safety copy itself).`)) return;
-  try {
-    const r = await fetch(`api/backups/${active}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || r.status);
-    toast(`Backup deleted: ${name}`); load();
-  } catch (e) { toast(`Delete failed: ${e.message}`, true); }
+function delBak(id, name) {
+  if (!confirm(`Delete this backup of "${name}"?\nIt is the safety copy itself: this can't be undone.`)) return;
+  send(`api/backups/${active}?id=${encodeURIComponent(id)}`, { method: 'DELETE' },
+       () => `Backup deleted: ${name}`, "Couldn't delete");
 }
-
-async function upFull(file) {
+function upFull(file) {
   if (!file) return;
-  const form = new FormData(); form.append('file', file);
-  try {
-    const r = await fetch(`api/saves/${active}/upload-full`, { method: 'POST', body: form });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.detail || r.status);
-    toast(`Restored: ${d.restored.join(', ')} (backups kept)`); load(); loadEmulators();
-  } catch (e) { toast(`Restore failed: ${e.message}`, true); }
+  send(`api/saves/${active}/upload-full`, { method: 'POST', body: form(file) },
+       d => `Restored: ${d.restored.join(', ')}. Backups kept.`, "Couldn't restore");
 }
-
-async function inject(file, col, cardName) {
+function inject(file, col, cardName) {
   if (!file) return;
-  const form = new FormData(); form.append('file', file);
-  try {
-    const r = await fetch(`api/saves/${active}/upload?collection=${col}&card=${encodeURIComponent(cardName)}`, { method: 'POST', body: form });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.detail || r.status);
-    toast(`Added to ${cardName}: ${d.restored.join(', ')} (card backed up)`); load(); loadEmulators();
-  } catch (e) { toast(`Add failed: ${e.message}`, true); }
+  send(`api/saves/${active}/upload?collection=${col}&card=${encodeURIComponent(cardName)}`, { method: 'POST', body: form(file) },
+       d => `Added to ${cardName}: ${d.restored.join(', ')}. Card backed up.`, "Couldn't add");
 }
-
-async function del(id, name) {
-  if (!confirm(`Delete "${name}"?\nA backup is kept next to it, but the game won't see this save anymore.`)) return;
-  try {
-    const r = await fetch(`api/saves/${active}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || r.status);
-    toast(`Deleted (backup kept): ${name}`); load(); loadEmulators();
-  } catch (e) { toast(`Delete failed: ${e.message}`, true); }
+function del(id, name) {
+  if (!confirm(`Delete "${name}"?\nA backup is kept, but the game won't see this save any more.`)) return;
+  send(`api/saves/${active}?id=${encodeURIComponent(id)}`, { method: 'DELETE' },
+       () => `Deleted, backup kept: ${name}`, "Couldn't delete");
 }
 function dropUp(ev, col){ ev.preventDefault(); ev.currentTarget.classList.remove('hover'); const f=ev.dataTransfer.files[0]; if(f) up(f,col); }
-async function up(file, col) {
+function up(file, col) {
   if (!file) return;
-  const form = new FormData(); form.append('file', file);
-  try {
-    const r = await fetch(`api/saves/${active}/upload?collection=${col}`, { method: 'POST', body: form });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.detail || r.status);
-    toast(`Restored: ${d.restored.join(', ')} (backup kept)`); load(); loadEmulators();
-  } catch (e) { toast(`Restore failed: ${e.message}`, true); }
+  send(`api/saves/${active}/upload?collection=${col}`, { method: 'POST', body: form(file) },
+       d => `Restored: ${d.restored.join(', ')}. Backup kept.`, "Couldn't restore");
 }
 
-(function(){ loadEmulators().then(()=>{ const q=new URLSearchParams(location.search).get('emu'); if(q) selectEmu(q); }); })();
+// Open straight on a system: the one in the URL, else the first with saves.
+loadEmulators().then(() => {
+  const q = new URLSearchParams(location.search).get('emu');
+  const first = emulators.find(e => e.id === q && e.available) || emulators.find(e => e.available);
+  if (first) selectEmu(first.id);
+  else $('page').innerHTML = '<div class="page-body"><div class="empty">No save on this box yet. Saves show up here after a game has been played once.</div></div>';
+});
 </script>
 </body>
 </html>

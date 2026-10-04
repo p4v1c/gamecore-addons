@@ -80,6 +80,11 @@ def build_tree():
     (GCD / "emu/gb").mkdir(parents=True)
     (GCD / "emu/gb/Tetris.gb").write_bytes(b"ROM")
     (GCD / "emu/gb/Tetris.sav").write_bytes(b"S" * 64)
+    # melonDS — player 1's save and player 2's (GameCore local multiplayer)
+    (GCD / "emu/melonds").mkdir(parents=True)
+    (GCD / "emu/melonds/Pokemon Platinum.nds").write_bytes(b"ROM")
+    (GCD / "emu/melonds/Pokemon Platinum.sav").write_bytes(b"P1" * 256)
+    (GCD / "emu/melonds/Pokemon Platinum.sav.2").write_bytes(b"P2" * 256)
     (GCD / "emu/wii").mkdir(parents=True)
     (GCD / "emu/wii/Mario Kart Wii.rvz").write_bytes(b"RVZ\x01" + bytes(0x54) + b"RMCP01")
 
@@ -193,6 +198,13 @@ def test_listing():
     check("mgba game found", len(g["games"]) == 1)
     check("mgba save+state grouped",
           g["games"][0]["saves"] == 1 and g["games"][0]["states"] == 1)
+
+
+def test_melonds_player_saves():
+    print("melonDS player saves")
+    g = games("melonds")
+    check("player 2's save belongs to the same game", len(g["games"]) == 1, str(g["games"]))
+    check("both players' saves are listed", g["games"][0]["saves"] == 2, str(g["games"]))
 
 
 def test_duckstation_card():
@@ -575,6 +587,7 @@ if __name__ == "__main__":
     build_tree()
     test_two_roots()
     test_listing()
+    test_melonds_player_saves()
     test_duckstation_card()
     test_pcsx2_shared_card()
     test_dolphin_gci()

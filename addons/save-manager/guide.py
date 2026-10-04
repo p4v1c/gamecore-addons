@@ -32,8 +32,10 @@ GUIDE = {
              "note": "default (SaveFilePath empty in melonDS.toml; the Windows zip is portable)"},
         ],
         "grab": ["<rom name>.sav — raw save, portable",
+                 "<rom name>.sav.2 … .sav.4 — players 2-4 in GameCore's local multiplayer",
                  "<rom name>.ml1 … .ml8 — save states (same-build only)"],
-        "restore": "Name each .sav exactly like the ROM on the box and drop it on the save zone.",
+        "restore": "Name each .sav exactly like the ROM on the box and drop it on the save zone. "
+                   "For player 2, 3 or 4, add .2, .3 or .4 (<rom name>.sav.2).",
         "notes": ["DeSmuME .dsv files are NOT the same format — use melonDS's "
                   "'Import savefile' on the PC first, then copy the resulting .sav."],
     },

@@ -60,6 +60,10 @@ COVERS = GC_DATA / "emu" / "covers"
 ROMS = GC_DATA / "emu"
 
 
+PLAYER_SLOTS = (2, 3, 4)
+_PLAYER_SAVE = re.compile(r"^(.*)\.sav\.([2-4])$", re.IGNORECASE)
+
+
 def C(subpath, mode, kind, exts=(), group="none", glob="*"):
     return {"subpath": subpath, "mode": mode, "kind": kind,
             "exts": [e.lower() for e in exts], "group": group, "glob": glob}
@@ -81,7 +85,9 @@ CATALOG = {
     "gbc": _mgba("gbc", "Game Boy Color"),
     "gba": _mgba("gba", "Game Boy Advance"),
     "melonds": {"label": "Nintendo DS", "bases": [GC_DATA / "emu/melonds"], "collections": [
-        C("", "files", "save", [".sav", ".nvm"], "rom"),
+        # .sav.2-.sav.4: players 2-4 of GameCore's local multiplayer, one
+        # melonDS instance each (player 1 keeps the plain .sav).
+        C("", "files", "save", [".sav", ".nvm"] + [f".sav.{n}" for n in PLAYER_SLOTS], "rom"),
         C("", "files", "state", [".mln"] + [f".ml{i}" for i in range(1, 9)], "rom"),
     ]},
     "gopher64": {"label": "Nintendo 64", "bases": [
@@ -630,6 +636,10 @@ def _hex_ascii(lo: str) -> str | None:
 # game_key "" → the entry goes to "Shared & system files".
 
 def _res_rom(base, cdir, rel):
+    # "<rom>.sav.2" is player 2's save of <rom>: same game, labelled by player.
+    if m := _PLAYER_SAVE.match(rel.name):
+        stem = m.group(1)
+        return stem, f"{_prettify(stem)} (player {m.group(2)})", cover_for(stem, _prettify(stem))
     stem = rel.stem
     return stem, _prettify(stem), cover_for(stem, _prettify(stem))
 
@@ -933,7 +943,8 @@ def _candidates(cdir: Path, col: dict):
         rel = PurePosixPath(p.relative_to(cdir).as_posix())
         if _skip(rel):
             continue
-        if not p.is_dir() and col["exts"] and p.suffix.lower() not in col["exts"]:
+        # Whole-name match: a player save's extension is ".sav.2", not ".2".
+        if not p.is_dir() and col["exts"] and not p.name.lower().endswith(tuple(col["exts"])):
             continue
         yield rel, p.is_dir()
 

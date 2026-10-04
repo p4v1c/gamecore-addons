@@ -36,7 +36,7 @@ On the box (as configured by the GameCore installer — first existing path wins
 | System | Emulator | Native saves | Save states |
 |---|---|---|---|
 | GB / GBC / GBA | mGBA | `emu/<gb|gbc|gba>/<rom>.sav` (next to the ROM); `emu/mgba/` on a box not yet split | `<rom>.ss0`–`.ss9` |
-| DS | melonDS | `emu/melonds/<rom>.sav` | `<rom>.ml1`–`.ml8`, `.mln` |
+| DS | melonDS | `emu/melonds/<rom>.sav`; players 2-4 of local multiplayer `<rom>.sav.2`–`.sav.4` | `<rom>.ml1`–`.ml8`, `.mln` |
 | N64 | gopher64 | `…/gopher64/saves/<name>-<sha256>.{eep,sra,fla,mpk}` | `…/gopher64/states/` |
 | PS1 | DuckStation | `~/.local/share/duckstation/memcards/*.mcd` (1 card per game by default) | `savestates/<serial>_<slot>.sav` |
 | PS2 | PCSX2 | `~/.config/PCSX2/memcards/Mcd001.ps2` (shared card) | `sstates/*.p2s` |

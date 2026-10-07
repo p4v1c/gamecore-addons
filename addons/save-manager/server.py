@@ -12,7 +12,10 @@ Beyond single entries:
     emulator base, restorable in one drop via /upload-full),
   * per-save export/import/delete INSIDE shared PS1/PS2/GC memory cards,
   * a per-emulator "transfer from PC" guide (guide.py) + a standalone PC
-    export tool served under /tools/ that packs a PC's saves for this API.
+    export tool served under /tools/ that packs a PC's saves for this API,
+  * GameCore profiles (profiles.py): every route takes `profile=<id>` to act
+    on that profile's saves, and a game's saves copy from one profile to
+    another. Without it, or on a box without profiles, it is the primary's.
 """
 import io
 import os
@@ -32,26 +35,20 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import memcard
-import ryujinx as ryu
+import profiles
+from archive import NORM_TAGS, arc_items, restore_normalized, zip_entries
+from backups import BAK_RE, dir_size, fmt_size
+from backups import backup as _backup
+from backups import listing as _backups
 from catalog import CATALOG, resolve_base, scan, sony_game
 from guide import GUIDE
+from profiles import View
 
 ADDON_DIR = Path(__file__).parent
 PORT = int(os.environ.get("ADDON_PORT", 8772))
+_PROFILE_ZIP = re.compile(r"profiles/[^/]*-([A-Za-z0-9]+)/(.+)")
 
 app = FastAPI(title="GameCore addon — Save Manager", root_path=os.environ.get("ADDON_BASE", ""))
-
-
-def fmt_size(n: float) -> str:
-    for unit in ("B", "KB", "MB", "GB"):
-        if n < 1024:
-            return f"{n:.1f} {unit}"
-        n /= 1024
-    return f"{n:.1f} TB"
-
-
-def dir_size(p: Path) -> int:
-    return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
 
 
 def _emu(emu_id: str) -> dict:
@@ -60,9 +57,31 @@ def _emu(emu_id: str) -> dict:
     return CATALOG[emu_id]
 
 
-def _entries(emu_id: str, internal: bool = False) -> list[dict]:
-    _emu(emu_id)
-    _base, raw = scan(emu_id)
+def _person(profile: str | None) -> dict | None:
+    """The profile a request names, None for the primary (or no profile)."""
+    person = profiles.find(profile) if profile else {"primary": True}
+    if person is None:
+        raise HTTPException(404, "unknown profile")
+    return None if person["primary"] else person
+
+
+def _view(emu_id: str, profile: str | None = None, write: bool = False) -> View:
+    """One profile's saves of an emulator. `write` refuses while a profile's
+    game holds them: its swapped folders would take the write, or lose it."""
+    meta = _emu(emu_id)
+    base = resolve_base(emu_id)
+    if not base:
+        raise HTTPException(404, "no data directory for this emulator on the box")
+    if write and (busy := profiles.playing_message(emu_id, base)):
+        raise HTTPException(409, busy)
+    person = _person(profile)
+    if person and emu_id not in profiles.LAYOUT:
+        raise HTTPException(400, f"Every profile shares the {meta['label']} saves.")
+    return View(emu_id, base, person)
+
+
+def _entries(view: View, internal: bool = False) -> list[dict]:
+    _base, raw = scan(view.emu_id, view)
     out = []
     for e in raw:
         try:
@@ -132,24 +151,40 @@ def _entries(emu_id: str, internal: bool = False) -> list[dict]:
     return out
 
 
-def _collection_dir(emu_id: str, ci: int) -> tuple[Path, dict]:
-    base = resolve_base(emu_id)
-    if not base:
-        raise HTTPException(404, "no data directory for this emulator on the box")
-    cols = _emu(emu_id)["collections"]
+def _collection(view: View, ci: int) -> dict:
+    cols = CATALOG[view.emu_id]["collections"]
     if not 0 <= ci < len(cols):
         raise HTTPException(400, "bad collection")
-    col = cols[ci]
-    return (base / col["subpath"]) if col["subpath"] else base, col
+    return cols[ci]
 
 
-def _resolve_entry(emu_id: str, entry_id: str) -> tuple[Path, Path, dict]:
+def _locate(view: View, ci: int, rel: PurePosixPath) -> tuple[Path, Path]:
+    """(path on disk, its folder) of a collection-relative path, after the
+    containment checks every write relies on."""
+    _collection(view, ci)
+    if rel.is_absolute() or ".." in rel.parts:
+        raise HTTPException(403, "path outside the save directory")
+    found = view.path(ci, rel)
+    if found is None:
+        raise HTTPException(400, "Every profile shares these saves: use the main profile's page.")
+    target, cdir = found
+    try:
+        target.resolve().relative_to(cdir.resolve())
+    except ValueError:
+        raise HTTPException(403, "path outside the save directory")
+    # The owner's side never reaches into a profile's folder, whatever links lie on disk.
+    if view.profile is None and profiles.in_root(target) is not None:
+        raise HTTPException(403, "path outside the save directory")
+    return target, cdir
+
+
+def _resolve_entry(view: View, entry_id: str) -> tuple[Path, Path]:
     """entry id = '<collection>/<relative path>' (games can nest several
     levels deep — Wii title trees, Switch user dirs…)."""
     m = re.fullmatch(r"(\d+)/(.+)", entry_id)
     if not m:
         raise HTTPException(400, "bad entry id")
-    cdir, col = _collection_dir(emu_id, int(m.group(1)))
+    _collection(view, int(m.group(1)))
     rel = PurePosixPath(m.group(2))
     # `not rel.parts` is the one that matters — same guard upload() already has.
     # PurePosixPath(".").parts is the empty tuple, so a "." entry id sailed past
@@ -161,43 +196,12 @@ def _resolve_entry(emu_id: str, entry_id: str) -> tuple[Path, Path, dict]:
     # ROM directory.
     if not rel.parts:
         raise HTTPException(400, "bad entry id")
-    if rel.is_absolute() or ".." in rel.parts:
-        raise HTTPException(403, "path outside the save directory")
-    target = cdir.joinpath(*rel.parts)
-    try:
-        target.resolve().relative_to(cdir.resolve())
-    except ValueError:
-        raise HTTPException(403, "path outside the save directory")
+    target, cdir = _locate(view, int(m.group(1)), rel)
     # Defence in depth: whatever the id looked like, an entry is something
     # *inside* a collection, never the collection itself.
     if target.resolve() == cdir.resolve():
         raise HTTPException(400, "bad entry id")
-    return target, cdir, col
-
-
-_KEEP_BACKUPS = 3
-
-
-def _backup(path: Path, prune: bool = True) -> None:
-    if not path.exists():
-        return
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    dest = path.with_name(f"{path.name}.bak-{ts}")
-    if path.is_dir():
-        shutil.copytree(path, dest)
-    else:
-        shutil.copy2(path, dest)
-    if not prune:        # restoring FROM a backup must never delete that backup
-        return
-    # keep the disk sane: only the _KEEP_BACKUPS most recent backups per target
-    # (prefix match, not glob — ROM names may contain [brackets] etc.)
-    prefix = f"{path.name}.bak-"
-    baks = sorted(p for p in path.parent.iterdir() if p.name.startswith(prefix))
-    for old in baks[:-_KEEP_BACKUPS]:
-        try:
-            shutil.rmtree(old) if old.is_dir() else old.unlink()
-        except OSError:
-            pass
+    return target, cdir
 
 
 # ── API ───────────────────────────────────────────────────────────────────────
@@ -207,28 +211,40 @@ def health():
     return {"ok": True}
 
 
+@app.get("/api/profiles")
+def list_profiles():
+    """The box's profiles ([] = no profiles: the page looks as it always did)."""
+    return profiles.listing()
+
+
 @app.get("/api/emulators")
-def list_emulators():
+def list_emulators(profile: str | None = None):
+    person = _person(profile)
     result = []
     for emu_id, meta in CATALOG.items():
         base = resolve_base(emu_id)
-        entries = _entries(emu_id) if base else []
+        shared = person is not None and emu_id not in profiles.LAYOUT
+        entries = _entries(View(emu_id, base, person)) if base and not shared else []
         games = {e["game_key"] for e in entries if e["game_key"]}
         result.append({
             "id": emu_id, "label": meta["label"], "available": base is not None,
             "games": len(games),
             "entries": len(entries),
+            **({"shared": True} if shared else {}),
         })
     return result
 
 
 @app.get("/api/games/{emu_id}")
-def list_games(emu_id: str):
+def list_games(emu_id: str, profile: str | None = None):
     """Saves grouped by game (icon + name + its files), plus an 'other' bucket
     for saves not tied to a game (shared cards, system, cache)."""
     _emu(emu_id)
     base = resolve_base(emu_id)
-    entries = _entries(emu_id, internal=True)
+    person = _person(profile)
+    shared = person is not None and emu_id not in profiles.LAYOUT
+    view = View(emu_id, base, person) if base and not shared else None
+    entries = _entries(view, internal=True) if view else []
     games: dict[str, dict] = {}
     other: list[dict] = []
     for e in entries:
@@ -252,17 +268,21 @@ def list_games(emu_id: str):
         has_icon = g.pop("_icon") is not None
         # Relative: behind Caddy the page lives under the addon's path (/saves/).
         g["icon"] = (f"api/games/{emu_id}/icon?key={quote(g['key'])}"
-                     if has_icon else None)
+                     + (f"&profile={person['id']}" if person else "") if has_icon else None)
+    cols = _emu(emu_id)["collections"]
     return {
         "available": base is not None,
         "base": str(base) if base else None,
+        "folder": str(view.folder) if view and view.folder else None,
+        "shared": shared,
+        "playing": profiles.playing_message(emu_id, base),
         "collections": [{"index": i, "kind": c["kind"], "mode": c["mode"],
                          "hint": _MODE_HINT.get(c["mode"], "")}
-                        for i, c in enumerate(_emu(emu_id)["collections"])],
+                        for i, c in enumerate(cols) if not shared and (view is None or view.sources(i))],
         "games": games_list,
         "other": other,
-        "backups": _backups(emu_id),
-        "guide": GUIDE.get(emu_id),
+        "backups": _backups(view) if view else [],
+        "guide": None if shared else GUIDE.get(emu_id),
     }
 
 
@@ -311,11 +331,11 @@ _tga_cache: dict = {}
 
 
 @app.get("/api/games/{emu_id}/icon")
-def game_icon(emu_id: str, key: str):
+def game_icon(emu_id: str, key: str, profile: str | None = None):
     """The icon the resolver found for this game: savedata ICON0.PNG (PS3/PSP),
     Wii U iconTex.tga (converted), or a GameCore cover."""
-    _emu(emu_id)
-    _base, raw = scan(emu_id)
+    view = _view(emu_id, profile)
+    _base, raw = scan(emu_id, view)
     icon = next((e["icon"] for e in raw if e["key"] == key and e["icon"]), None)
     if not icon and emu_id in ("pcsx2", "duckstation") and re.fullmatch(r"[A-Z]{4}-\d{5}", key):
         # a game that lives inside a shared card isn't in scan()'s entries
@@ -339,8 +359,8 @@ def game_icon(emu_id: str, key: str):
 
 
 @app.get("/api/saves/{emu_id}/download")
-def download(emu_id: str, id: str, save: str | None = None):
-    target, cdir, _col = _resolve_entry(emu_id, id)
+def download(emu_id: str, id: str, save: str | None = None, profile: str | None = None):
+    target, _cdir = _resolve_entry(_view(emu_id, profile), id)
     if not target.exists():
         raise HTTPException(404, "not found")
     if save:
@@ -356,9 +376,9 @@ def download(emu_id: str, id: str, save: str | None = None):
     if target.is_dir():
         # zip paths are relative to the collection dir, so re-uploading the
         # zip restores nested games (Wii <hi>/<lo>, Switch <user>/<tid>…)
-        # at their exact place. _zip_entries spools to disk past 64 MiB so a
+        # at their exact place. zip_entries spools to disk past 64 MiB so a
         # huge save-state folder can't eat the box's RAM.
-        buf = _zip_entries([(target, target.relative_to(cdir).as_posix())])
+        buf = zip_entries([(target, PurePosixPath(id.split("/", 1)[1]).as_posix())])
         return StreamingResponse(buf, media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="{target.name}.zip"'})
     return FileResponse(str(target), filename=target.name)
@@ -366,13 +386,18 @@ def download(emu_id: str, id: str, save: str | None = None):
 
 @app.post("/api/saves/{emu_id}/upload")
 async def upload(emu_id: str, collection: int, file: UploadFile = File(...),
-                 card: str | None = None):
-    cdir, col = _collection_dir(emu_id, collection)
-    cdir.mkdir(parents=True, exist_ok=True)
+                 card: str | None = None, profile: str | None = None):
+    view = _view(emu_id, profile, write=True)
+    col = _collection(view, collection)
     name = Path(file.filename or "").name
     if not name:
         raise HTTPException(400, "no filename")
     data = await file.read()
+
+    def dest(rel: PurePosixPath) -> Path:
+        target, cdir = _locate(view, collection, rel)
+        cdir.mkdir(parents=True, exist_ok=True)
+        return target
 
     if card is not None:
         # Inject one game's save (.mcs/.psu) into a specific shared card. The
@@ -381,13 +406,9 @@ async def upload(emu_id: str, collection: int, file: UploadFile = File(...),
         # `card` is the collection-relative path (cards mode scans recursively,
         # so a card may live in a subfolder) — validated like every entry path.
         rel = PurePosixPath(card)
-        if rel.is_absolute() or ".." in rel.parts or not rel.parts:
+        if not rel.parts:
             raise HTTPException(403, "path outside the save directory")
-        card_path = cdir.joinpath(*rel.parts)
-        try:
-            card_path.resolve().relative_to(cdir.resolve())
-        except ValueError:
-            raise HTTPException(403, "path outside the save directory")
+        card_path = dest(rel)
         if not card_path.is_file():
             raise HTTPException(404, "card not found")
         try:
@@ -421,31 +442,23 @@ async def upload(emu_id: str, collection: int, file: UploadFile = File(...),
         for m, rel in arcs:
             if PurePosixPath(m.filename).is_absolute() or ".." in PurePosixPath(m.filename).parts:
                 raise HTTPException(400, "zip contains an unsafe path")
+        dests = [(m, dest(rel)) for m, rel in arcs]       # every path checked before any write
         for root in sorted({rel.parts[0] for _m, rel in arcs}):
-            _backup(cdir / root)
-        for m, rel in arcs:
-            dest = (cdir.joinpath(*rel.parts)).resolve()
-            try:
-                dest.relative_to(cdir.resolve())
-            except ValueError:
-                raise HTTPException(400, "zip contains an unsafe path")
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(zf.read(m))
+            _backup(dest(PurePosixPath(root)))
+        for m, target in dests:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(zf.read(m))
         return {"ok": True, "restored": sorted({rel.parts[0] for _m, rel in arcs})}
 
-    dest = cdir / name
-    try:
-        dest.resolve().relative_to(cdir.resolve())
-    except ValueError:
-        raise HTTPException(403, "unsafe path")
-    _backup(dest)
-    dest.write_bytes(data)
+    target = dest(PurePosixPath(name))
+    _backup(target)
+    target.write_bytes(data)
     return {"ok": True, "restored": [name]}
 
 
 @app.delete("/api/saves/{emu_id}")
-def delete(emu_id: str, id: str, save: str | None = None):
-    target, _cdir, _col = _resolve_entry(emu_id, id)
+def delete(emu_id: str, id: str, save: str | None = None, profile: str | None = None):
+    target, _cdir = _resolve_entry(_view(emu_id, profile, write=True), id)
     if not target.exists():
         raise HTTPException(404, "not found")
     if save:
@@ -471,324 +484,257 @@ def delete(emu_id: str, id: str, save: str | None = None):
     return {"ok": True}
 
 
-_BAK_PART_RE = re.compile(r"\.bak-\d{8}-\d{6}")
-
-
-def _zip_entries(items: list[tuple[Path, str]]):
-    """Zip (path, arcname base) pairs. Backups are never bundled (matched on
-    the full `.bak-<timestamp>` suffix, not a raw substring, so a game file
-    that merely contains '.bak-' in its name is kept). Spools to a temp file
-    past 64 MiB so a full RPCS3 tree can't eat the box's RAM."""
-    buf = tempfile.SpooledTemporaryFile(max_size=64 * 1024 * 1024)
-    seen = set()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for root, arc in items:
-            pairs = ([(f, f"{arc}/{f.relative_to(root).as_posix()}")
-                      for f in sorted(root.rglob("*")) if f.is_file()]
-                     if root.is_dir() else [(root, arc)])
-            for f, name in pairs:
-                if name in seen or _BAK_PART_RE.search(name):
-                    continue
-                seen.add(name)
-                z.write(f, name)
-    buf.seek(0)
-    return buf
-
-
-def _arc_items(emu_id: str, base: Path, cols: list, entries: list) -> list[tuple[Path, str]]:
-    """(source path, zip name) per scan entry. Most entries are archived under
-    their base-relative path. Game saves of the id-dependent emulators get a
-    NORMALIZED prefix instead, so the zip restores on any install:
-      Switch  switch-title/<title id>/<save type>/…   (Ryujinx ids and yuzu
-              user dirs are install-specific)
-      X360    x360-title/<TitleID>/…                  (Xenia profile XUIDs differ)
-      PS4     ps4-title/<CUSA…>/<savedir>/…           (shadPS4 moved dirs in v0.16)
-    /upload-full maps those prefixes back onto the local install."""
-    items = []
-    for e in entries:
-        col, p = cols[e["ci"]], e["path"]
-        if e["key"] and emu_id in _NORM_TAGS["switch-title"]:
-            if col["subpath"] == "bis/user/save":
-                tid, typ = ryu.identify(base, p)
-                if tid:
-                    src = next((p / c for c in ("0", "1") if (p / c).is_dir()), p)
-                    items.append((src, f"switch-title/{tid}/{typ or 1}"))
-                    continue
-            elif col["subpath"] == "nand/user/save":
-                typ = _DEVICE_TYPE if p.parent.name == _DEVICE_USER else "1"
-                items.append((p, f"switch-title/{e['key']}/{typ}"))
-                continue
-        elif e["key"] and emu_id == "xenia":
-            items.append((p, f"x360-title/{p.name.upper()}"))
-            continue
-        elif e["key"] and emu_id == "shadps4":
-            rel = p.relative_to(base / col["subpath"])
-            items.append((p, f"ps4-title/{rel.as_posix()}"))
-            continue
-        items.append((p, p.relative_to(base).as_posix()))
-    return items
-
-
-@app.get("/api/games/{emu_id}/download")
-def download_game(emu_id: str, key: str):
-    """Everything one game is made of (saves + states, every collection) as a
-    single zip, restorable via the 'full backup' drop zone."""
-    base, raw = scan(emu_id)
-    if not base:
-        raise HTTPException(404, "no data directory for this emulator on the box")
+def _game_items(view: View, key: str) -> list[tuple[Path, str]]:
+    """(path, zip name) of everything one game is made of in this view."""
+    cols = CATALOG[view.emu_id]["collections"]
+    _base, raw = scan(view.emu_id, view)
     picks = [e for e in raw if e["key"] == key]
-    items = _arc_items(emu_id, base, _emu(emu_id)["collections"], picks) if picks else []
+    items = arc_items(view.emu_id, view.base, cols, picks)
     # A game may (also) live inside a shared memory card — that attribution
     # happens at the server layer (_entries), not in scan, so scan-level picks
     # alone would miss the card (or, for card-only games, find nothing at all).
     # Bundle every card holding this game, under its base-relative path so
-    # /upload-full accepts the zip. _zip_entries dedups repeated arc names.
+    # /upload-full accepts the zip. zip_entries dedups repeated arc names.
     seen = set()
-    for e in _entries(emu_id):
-        if e["game_key"] != key or e["id"] in seen:
-            continue
-        if not (e["card"] or e.get("in_card")):
+    for e in _entries(view):
+        if e["game_key"] != key or e["id"] in seen or not (e["card"] or e.get("in_card")):
             continue                     # plain entries are covered by `picks`
         seen.add(e["id"])
-        target, _cdir, _col = _resolve_entry(emu_id, e["id"])
+        target, _cdir = _resolve_entry(view, e["id"])
+        ci, rel = e["id"].split("/", 1)
         if target.exists():
-            items.append((target, target.relative_to(base).as_posix()))
+            items.append((target, PurePosixPath(cols[int(ci)]["subpath"], rel).as_posix()))
+    return items
+
+
+@app.get("/api/games/{emu_id}/download")
+def download_game(emu_id: str, key: str, profile: str | None = None):
+    """Everything one game is made of (saves + states, every collection) as a
+    single zip, restorable via the 'full backup' drop zone."""
+    items = _game_items(_view(emu_id, profile), key)
     if not items:
         raise HTTPException(404, "unknown game")
     stem = re.sub(r"[^A-Za-z0-9._ -]+", "_", key).strip() or "game"
-    return StreamingResponse(_zip_entries(items), media_type="application/zip",
+    return StreamingResponse(zip_entries(items), media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{emu_id}-{stem}.zip"'})
 
 
 @app.get("/api/saves/{emu_id}/download-all")
-def download_all(emu_id: str):
+def download_all(emu_id: str, profile: str | None = None):
     """Full backup of an emulator: every save, state, card and system file this
-    addon knows about, in one zip /upload-full can restore anywhere."""
-    base, raw = scan(emu_id)
-    if not base:
-        raise HTTPException(404, "no data directory for this emulator on the box")
-    if not raw:
+    addon knows about, in one zip /upload-full can restore anywhere. The
+    primary's backup also carries every other profile's saves, each under
+    `profiles/<name>-<id>/` with the same names inside."""
+    view = _view(emu_id, profile)
+    cols = CATALOG[emu_id]["collections"]
+    items = arc_items(emu_id, view.base, cols, scan(emu_id, view)[1])
+    others = [p for p in profiles.listing() if not p["primary"]] if view.profile is None else []
+    for person in others if emu_id in profiles.LAYOUT else ():
+        theirs = View(emu_id, view.base, person)
+        items += [(p, f"profiles/{profiles.label(person)}/{name}")
+                  for p, name in arc_items(emu_id, view.base, cols, scan(emu_id, theirs)[1])]
+    if not items:
         raise HTTPException(404, "nothing to back up")
-    items = _arc_items(emu_id, base, _emu(emu_id)["collections"], raw)
     ts = datetime.now().strftime("%Y%m%d")
-    return StreamingResponse(_zip_entries(items), media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{emu_id}-saves-{ts}.zip"'})
+    who = f"-{profiles.label(view.profile)}" if view.profile else ""
+    return StreamingResponse(zip_entries(items), media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{emu_id}-saves{who}-{ts}.zip"'})
 
 
 # ── backups ───────────────────────────────────────────────────────────────────
 # Every destructive operation leaves a sibling <name>.bak-<YYYYMMDD-HHMMSS>
-# (the 3 most recent per target are kept). This section makes them browsable
-# and restorable from the UI.
-
-_BAK_RE = re.compile(r"^(.+)\.bak-(\d{8}-\d{6})$")
-
-
-def _backups(emu_id: str) -> list[dict]:
-    base = resolve_base(emu_id)
-    if not base:
-        return []
-    out, seen = [], set()
-    for ci, col in enumerate(_emu(emu_id)["collections"]):
-        cdir = base / col["subpath"] if col["subpath"] else base
-        if not cdir.is_dir():
-            continue
-        for p in cdir.rglob("*"):
-            m = _BAK_RE.fullmatch(p.name)
-            if not m or p in seen:
-                continue
-            rel = p.relative_to(cdir)
-            # a backup of a folder may contain older backups — list only the top one
-            if any(".bak-" in part for part in rel.parts[:-1]):
-                continue
-            seen.add(p)
-            try:
-                size = dir_size(p) if p.is_dir() else p.stat().st_size
-            except OSError:
-                size = 0
-            ts = m.group(2)
-            out.append({
-                "id": f"{ci}/{rel.as_posix()}",
-                "name": rel.as_posix()[:-20],          # strip ".bak-<timestamp>"
-                "when": f"{ts[:4]}-{ts[4:6]}-{ts[6:8]} {ts[9:11]}:{ts[11:13]}:{ts[13:]}",
-                "is_dir": p.is_dir(),
-                "size": size, "sizeHuman": fmt_size(size),
-                "orig_exists": p.with_name(m.group(1)).exists(),
-            })
-    out.sort(key=lambda b: (b["when"], b["name"]), reverse=True)
-    return out
-
+# (the 3 most recent per target are kept, see backups.py). This section makes
+# them browsable and restorable from the UI.
 
 @app.get("/api/backups/{emu_id}")
-def list_backups(emu_id: str):
-    return _backups(emu_id)
+def list_backups(emu_id: str, profile: str | None = None):
+    _emu(emu_id)
+    if not resolve_base(emu_id):
+        return []                    # not on the box: nothing set aside
+    return _backups(_view(emu_id, profile))
 
 
 @app.post("/api/backups/{emu_id}/restore")
-def restore_backup(emu_id: str, id: str):
+def restore_backup(emu_id: str, id: str, profile: str | None = None):
     """Put a backup back in place of the original. The current version (if
     any) is backed up first — without pruning, so the backup being restored
     can never be deleted mid-operation — making a restore itself reversible."""
-    target, _cdir, _col = _resolve_entry(emu_id, id)
-    m = _BAK_RE.fullmatch(target.name)
+    target, _cdir = _resolve_entry(_view(emu_id, profile, write=True), id)
+    m = BAK_RE.fullmatch(target.name)
     if not m or not target.exists():
         raise HTTPException(404, "backup not found")
     orig = target.with_name(m.group(1))
     _backup(orig, prune=False)
-    if orig.exists():
-        shutil.rmtree(orig) if orig.is_dir() else orig.unlink()
-    if target.is_dir():
-        shutil.copytree(target, orig)
-    else:
-        shutil.copy2(target, orig)
+    _replace(target, orig)
     return {"ok": True, "restored": m.group(1)}
 
 
 @app.delete("/api/backups/{emu_id}")
-def delete_backup(emu_id: str, id: str):
-    target, _cdir, _col = _resolve_entry(emu_id, id)
-    if not _BAK_RE.fullmatch(target.name) or not target.exists():
+def delete_backup(emu_id: str, id: str, profile: str | None = None):
+    target, _cdir = _resolve_entry(_view(emu_id, profile, write=True), id)
+    if not BAK_RE.fullmatch(target.name) or not target.exists():
         raise HTTPException(404, "backup not found")
     shutil.rmtree(target) if target.is_dir() else target.unlink()
     return {"ok": True}
 
 
-# Normalized zip prefix → the systems that restore it. Ryujinx and Eden share
-# one format so a save moves between them.
-_NORM_TAGS = {"switch-title": ("ryujinx", "switch"), "x360-title": ("xenia",),
-              "ps4-title": ("shadps4",)}
-# yuzu layout: device saves sit under the all-zero account. A Ryujinx Bcat
-# container (type 2) holding game data goes there too: Eden has no Bcat saves,
-# and ACNH's island reached one through an older import.
-_DEVICE_USER, _DEVICE_TYPE, _DEVICE_TYPES = "0" * 32, "3", ("2", "3")
+def _replace(src: Path, dest: Path) -> None:
+    """`dest` becomes a copy of `src`. Back `dest` up first."""
+    if dest.exists():
+        shutil.rmtree(dest) if dest.is_dir() else dest.unlink()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if src.is_dir():
+        shutil.copytree(src, dest)
+    else:
+        shutil.copy2(src, dest)
 
 
-def _clear_dir(d: Path) -> None:
-    d.mkdir(parents=True, exist_ok=True)
-    for c in d.iterdir():
-        shutil.rmtree(c) if c.is_dir() else c.unlink()
+# ── copy between profiles ─────────────────────────────────────────────────────
+
+def _card_patch(src_card: Path, dest_card: Path, save_keys: list[str]) -> bytes:
+    """`dest_card` with these saves of `src_card` in it, each replacing its old copy."""
+    src, card = src_card.read_bytes(), dest_card.read_bytes()
+    for key in save_keys:
+        try:
+            fname, blob = memcard.export_save(src, key)
+            try:
+                card = memcard.delete_save(card, key)
+            except KeyError:
+                pass                        # not on that card yet
+            card = memcard.import_save(card, blob, fname)
+        except ValueError as e:
+            raise HTTPException(400, f"Couldn't copy {key} into {dest_card.name}: {e}")
+        except Exception:
+            raise HTTPException(400, f"Couldn't copy {key} into {dest_card.name}.")
+    return card
 
 
-def _yuzu_user_for(user_root: Path, tid: str) -> str:
-    """The yuzu-family account dir to restore a title into. Saves are keyed by
-    account and a box can have several, so target the profile that already holds
-    this title, else the one with the most saves — not just the first sorted
-    (which is often the empty all-zero account)."""
-    if not user_root.is_dir():
-        return "0" * 32
-    # The all-zero account holds device saves, never an account's.
-    users = [p for p in user_root.iterdir() if p.is_dir() and p.name != _DEVICE_USER]
-    if not users:
-        return "0" * 32
-    for u in users:
-        if (u / tid).is_dir():
-            return u.name
-    return max(users, key=lambda u: sum(
-        1 for c in u.iterdir() if c.is_dir() and ".bak-" not in c.name)).name
+def _copy_plan(src: View, dest: View, key: str) -> tuple[list, list]:
+    """(whole files or folders to copy, cards to patch) for one game, every
+    destination checked before anything is written."""
+    rows = [e for e in _entries(src) if e["game_key"] == key]
+    in_card: dict[str, list[str]] = {}
+    for e in rows:
+        if e.get("in_card"):
+            in_card.setdefault(e["id"], []).append(e["save_key"])
+    copies, patches = [], []
+    for e in rows:
+        if e.get("in_card"):
+            continue
+        ci, rel = e["id"].split("/", 1)
+        found = dest.path(int(ci), PurePosixPath(rel))
+        # The other side shares this collection (Dolphin's states), or would
+        # not list it as its own (players 2-4 of a DS game): leave it.
+        if found is None or not dest.keeps(found[1], PurePosixPath(found[0].relative_to(found[1]).as_posix())):
+            continue
+        source, _cdir = _resolve_entry(src, e["id"])
+        target, _cdir = _locate(dest, int(ci), PurePosixPath(rel))
+        if e["id"] in in_card and target.is_file():
+            patches.append((target, _card_patch(source, target, in_card.pop(e["id"]))))
+        else:
+            in_card.pop(e["id"], None)
+            copies.append((source, target))
+    for card_id, keys in in_card.items():
+        ci, rel = card_id.split("/", 1)
+        source, _cdir = _resolve_entry(src, card_id)
+        target, _cdir = _locate(dest, int(ci), PurePosixPath(rel))
+        if not target.is_file():
+            who = (dest.profile or {}).get("name") or "The main profile"
+            raise HTTPException(409, f"{who} has no memory card {rel} yet: play a "
+                                     f"{CATALOG[src.emu_id]['label']} game as {who} once, then retry.")
+        patches.append((target, _card_patch(source, target, keys)))
+    return copies, patches
 
 
-def _restore_normalized(emu_id: str, base: Path, zf: zipfile.ZipFile,
-                        norm: list) -> list[str]:
-    """Write switch-title/… x360-title/… ps4-title/… members onto this
-    install's own layout (see _arc_items). `norm` = [(ZipInfo, rel parts)]."""
-    restored = []
-    if emu_id in _NORM_TAGS["switch-title"]:
-        # group by (title id, save type); target the local save container
-        groups: dict = {}
-        for m, parts in norm:
-            if len(parts) < 4 or not re.fullmatch(r"[0-9A-Fa-f]{16}", parts[1]):
-                raise HTTPException(400, f"malformed switch save path '{m.filename}'")
-            groups.setdefault((parts[1].upper(), parts[2]), []).append((m, parts[3:]))
-        ryujinx_layout = (base / "bis/user/save").is_dir()
-        tmap = ryu.title_map(base) if ryujinx_layout else {}
-        for (tid, typ), files in sorted(groups.items()):
-            if ryujinx_layout:
-                try:
-                    want = int(typ)
-                except ValueError:
-                    want = 1
-                d = (tmap.get((tid, want)) or tmap.get((tid, 1))
-                     or next((v for (t, _y), v in sorted(tmap.items()) if t == tid), None))
-                if d is None:
-                    raise HTTPException(400,
-                        f"no save container for title {tid} on this box — launch the "
-                        "game once (or open its save directory in Ryujinx), then retry")
-                _backup(d)
-                for c in ("0", "1"):     # 0 = committed, 1 = working: write both
-                    _clear_dir(d / c)
-                for m, rest in files:
-                    for c in ("0", "1"):
-                        dest = d / c / Path(*rest)
-                        dest.parent.mkdir(parents=True, exist_ok=True)
-                        dest.write_bytes(zf.read(m))
-                restored.append(f"{tid} → {d.name}")
-            else:                        # yuzu-family layout: dir name IS the title id
-                user_root = base / "nand/user/save/0000000000000000"
-                user = _DEVICE_USER if typ in _DEVICE_TYPES else _yuzu_user_for(user_root, tid)
-                d = user_root / user / tid
-                _backup(d)
-                _clear_dir(d)
-                for m, rest in files:
-                    dest = d / Path(*rest)
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    dest.write_bytes(zf.read(m))
-                restored.append(tid)
-        return restored
+@app.post("/api/games/{emu_id}/copy")
+def copy_game(emu_id: str, key: str, source: str, target: str):
+    """Copy one game's saves from one profile to another (ids from
+    /api/profiles, the primary's included). What it overwrites is backed up
+    first and listed under the destination's backups; the source is only read."""
+    if emu_id == "ryujinx":     # folders numbered per profile index: a copy could hit another game
+        raise HTTPException(400, "Ryujinx saves can't be copied between profiles.")
+    src, dest = _view(emu_id, source, write=True), _view(emu_id, target, write=True)
+    if (src.profile or {}).get("id") == (dest.profile or {}).get("id"):
+        raise HTTPException(400, "Pick two different profiles.")
+    copies, patches = _copy_plan(src, dest, key)
+    if not copies and not patches:
+        raise HTTPException(404, "This game has no save to copy.")
+    for source_path, target_path in copies:
+        _backup(target_path)
+        _replace(source_path, target_path)
+    for target_path, card in patches:
+        _backup(target_path)
+        target_path.write_bytes(card)
+    return {"ok": True, "copied": sorted({t.name for _s, t in copies} | {t.name for t, _c in patches})}
 
-    if emu_id == "xenia":
-        content = base / "content"
-        profiles = [p.name for p in sorted(content.iterdir())
-                    if p.is_dir() and re.fullmatch(r"[0-9A-F]{16}", p.name)
-                    and p.name != "0" * 16] if content.is_dir() else []
-        profiles.sort(key=lambda x: not (content / x / "FFFE07D1").is_dir())
-        if not profiles:
-            raise HTTPException(400, "no Xenia profile on this box — launch Xenia "
-                                     "once to create one, then retry")
-        done = set()
-        for m, parts in norm:
-            if len(parts) < 3 or not re.fullmatch(r"[0-9A-Fa-f]{8}", parts[1]):
-                raise HTTPException(400, f"malformed X360 save path '{m.filename}'")
-            tid = parts[1].upper()
-            root = content / profiles[0] / tid
-            if tid not in done:
-                done.add(tid)
-                _backup(root)
-            dest = root / Path(*parts[2:])
+
+# ── full restore ──────────────────────────────────────────────────────────────
+
+def _collection_of(cols: list, rel: PurePosixPath) -> tuple[int, PurePosixPath] | None:
+    """(collection, path inside it) a base-relative zip member belongs to:
+    the deepest folder that holds it, then the one whose extensions match
+    (mGBA's saves and states share its ROM folder)."""
+    path = rel.as_posix()
+    hits = [(ci, c) for ci, c in enumerate(cols)
+            if c["subpath"] == "" or path.startswith(c["subpath"] + "/")]
+    if not hits:
+        return None
+    deepest = max(len(c["subpath"]) for _ci, c in hits)
+    hits = [(ci, c) for ci, c in hits if len(c["subpath"]) == deepest]
+    ci, col = next(((ci, c) for ci, c in hits
+                    if not c["exts"] or rel.name.lower().endswith(tuple(c["exts"]))), hits[0])
+    return ci, PurePosixPath(path[len(col["subpath"]):].lstrip("/"))
+
+
+def _restore_members(view: View, zf: zipfile.ZipFile, members: list) -> list[str]:
+    """Write [(ZipInfo, base-relative name)] into one profile's view."""
+    cols = CATALOG[view.emu_id]["collections"]
+    norm, plain = [], []
+    for m, name in members:
+        rel = PurePosixPath(name)
+        tag_emus = NORM_TAGS.get(rel.parts[0])
+        if tag_emus:
+            if view.emu_id not in tag_emus:
+                raise HTTPException(400,
+                    f"'{m.filename}' is a {CATALOG[tag_emus[0]]['label']} save — "
+                    f"upload it to that system instead")
+            norm.append((m, rel.parts))
+            continue
+        found = _collection_of(cols, rel)
+        if found is None:
+            subpaths = [c["subpath"] for c in cols]
+            raise HTTPException(400,
+                f"'{m.filename}' doesn't belong to any save folder of this emulator "
+                f"(expected paths under: {', '.join(s or '<root>' for s in subpaths)})")
+        ci, inner = found
+        plain.append((m, ci, inner, _locate(view, ci, inner)[0]))
+
+    restored: list[str] = []
+    if plain:
+        # backup unit = the entry inside its collection, not the path's first
+        # component (backing up all of dev_hdd0 for one RPCS3 save would copy
+        # gigabytes of game data)
+        units = sorted({(ci, inner.parts[0]) for _m, ci, inner, _d in plain})
+        for ci, first in units:
+            _backup(_locate(view, ci, PurePosixPath(first))[0])
+        for m, _ci, _inner, dest in plain:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(zf.read(m))
-        restored += sorted(done)
-        return restored
-
-    if emu_id == "shadps4":
-        root = next((base / s for s in ("home/1/savedata", "savedata/1")
-                     if (base / s).is_dir()), base / "home/1/savedata")
-        done = set()
-        for m, parts in norm:
-            if len(parts) < 4:
-                raise HTTPException(400, f"malformed PS4 save path '{m.filename}'")
-            cusa = parts[1].upper()
-            if cusa not in done:
-                done.add(cusa)
-                _backup(root / cusa)
-            dest = root / cusa / Path(*parts[2:])
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(zf.read(m))
-        restored += sorted(done)
-        return restored
-
-    raise HTTPException(400, "normalized save paths aren't supported for this emulator")
+        restored += sorted({first for _ci, first in units})
+    if norm:
+        restored += restore_normalized(view, zf, norm)
+    return restored
 
 
 @app.post("/api/saves/{emu_id}/upload-full")
-async def upload_full(emu_id: str, file: UploadFile = File(...)):
+async def upload_full(emu_id: str, file: UploadFile = File(...), profile: str | None = None):
     """Restore a whole-game / full-backup zip — what /download-all, the
     per-game download and the PC export tool produce. Plain members (paths
     relative to the emulator base) must land inside a known save collection;
     normalized switch-title/… x360-title/… ps4-title/… members are remapped
-    onto this install's own ids."""
-    meta = _emu(emu_id)
-    base = resolve_base(emu_id)
-    if not base:
-        raise HTTPException(404, "no data directory for this emulator on the box")
+    onto this install's own ids. Members under `profiles/<name>-<id>/` go to
+    that profile; the rest to the profile the page shows."""
+    view = _view(emu_id, profile, write=True)
     # Spool the upload to disk past 64 MiB — a full RPCS3 backup can be huge
     # and must not be held in RAM on the box.
     buf = tempfile.SpooledTemporaryFile(max_size=64 * 1024 * 1024)
@@ -803,50 +749,23 @@ async def upload_full(emu_id: str, file: UploadFile = File(...)):
     if not members:
         raise HTTPException(400, "empty zip")
 
-    norm, plain = [], []
-    subpaths = [c["subpath"] for c in meta["collections"]]
+    groups: dict[str | None, list] = {}
     for m in members:
         rel = PurePosixPath(m.filename)
         if rel.is_absolute() or ".." in rel.parts or not rel.parts:
             raise HTTPException(400, "zip contains an unsafe path")
-        tag_emus = _NORM_TAGS.get(rel.parts[0])
-        if tag_emus:
-            if emu_id not in tag_emus:
-                raise HTTPException(400,
-                    f"'{m.filename}' is a {CATALOG[tag_emus[0]]['label']} save — "
-                    f"upload it to that system instead")
-            norm.append((m, rel.parts))
-        else:
-            if not any(s == "" or rel.as_posix().startswith(s + "/") for s in subpaths):
-                raise HTTPException(400,
-                    f"'{m.filename}' doesn't belong to any save folder of this emulator "
-                    f"(expected paths under: {', '.join(s or '<root>' for s in subpaths)})")
-            plain.append(m)
-
+        tagged = _PROFILE_ZIP.fullmatch(rel.as_posix())
+        who, name = (tagged.group(1), tagged.group(2)) if tagged else (None, rel.as_posix())
+        groups.setdefault(who, []).append((m, name))
+    views = {None: view}
+    for who in groups.keys() - {None}:
+        person = profiles.find(who)
+        if person is None or person["primary"]:
+            raise HTTPException(400, f"This zip holds the saves of a profile this box doesn't have ({who}).")
+        views[who] = _view(emu_id, who)
     restored: list[str] = []
-    if plain:
-        # backup unit = the entry inside its collection, not the path's first
-        # component (backing up all of dev_hdd0 for one RPCS3 save would copy
-        # gigabytes of game data)
-        units = set()
-        for m in plain:
-            rel = PurePosixPath(m.filename).as_posix()
-            s = max((s for s in subpaths if s == "" or rel.startswith(s + "/")), key=len)
-            rest = rel[len(s):].lstrip("/")
-            units.add(f"{s}/{rest.split('/', 1)[0]}" if s else rest.split("/", 1)[0])
-        for u in sorted(units):
-            _backup(base / u)
-        for m in plain:
-            dest = (base / m.filename).resolve()
-            try:
-                dest.relative_to(base.resolve())
-            except ValueError:
-                raise HTTPException(400, "zip contains an unsafe path")
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(zf.read(m))
-        restored += sorted({u.rsplit("/", 1)[-1] for u in units})
-    if norm:
-        restored += _restore_normalized(emu_id, base, zf, norm)
+    for who, group in groups.items():
+        restored += _restore_members(views[who], zf, group)
     return {"ok": True, "restored": restored}
 
 

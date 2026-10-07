@@ -1,0 +1,561 @@
+{
+ "atomiswave": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "atomiswave.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "atomiswave.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "azahar": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "qt-config.ini",
+     "key": "use_custom_storage",
+     "section": "Data%20Storage",
+     "value": "true"
+    },
+    {
+     "config": "qt-config.ini",
+     "key": "use_custom_storage\\default",
+     "section": "Data%20Storage",
+     "value": "false"
+    },
+    {
+     "config": "qt-config.ini",
+     "key": "sdmc_directory",
+     "section": "Data%20Storage",
+     "value": "@SAVES@/sdmc/"
+    },
+    {
+     "config": "qt-config.ini",
+     "key": "sdmc_directory\\default",
+     "section": "Data%20Storage",
+     "value": "false"
+    }
+   ]
+  }
+ },
+ "cemu": {
+  "profileSaves": {
+   "dirs": [
+    {
+     "as": "save",
+     "path": "@FLATPAK_DATA@/Cemu/mlc01/usr/save/00050000"
+    }
+   ]
+  }
+ },
+ "dolphin": {
+  "sharesEmulator": "gamecube"
+ },
+ "dreamcast": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "dreamcast.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "dreamcast.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "duckstation": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "settings.ini",
+     "key": "Directory",
+     "section": "MemoryCards",
+     "value": "@SAVES@/memcards"
+    },
+    {
+     "config": "settings.ini",
+     "key": "SaveStates",
+     "section": "Folders",
+     "value": "@SAVES@/savestates"
+    }
+   ]
+  }
+ },
+ "fds": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "fds.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "fds.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "gamecube": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "Dolphin.ini",
+     "key": "MemcardAPath",
+     "section": "Core",
+     "value": "@SAVES@/GC/MemoryCardA.raw"
+    },
+    {
+     "config": "Dolphin.ini",
+     "key": "MemcardBPath",
+     "section": "Core",
+     "value": "@SAVES@/GC/MemoryCardB.raw"
+    },
+    {
+     "config": "Dolphin.ini",
+     "key": "GCIFolderAPath",
+     "section": "Core",
+     "value": "@SAVES@/GC/Card A"
+    },
+    {
+     "config": "Dolphin.ini",
+     "key": "GCIFolderBPath",
+     "section": "Core",
+     "value": "@SAVES@/GC/Card B"
+    },
+    {
+     "config": "Dolphin.ini",
+     "key": "NANDRootPath",
+     "section": "General",
+     "value": "@SAVES@/Wii"
+    }
+   ]
+  }
+ },
+ "gamegear": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "gamegear.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "gamegear.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "gb": {
+  "sharesEmulator": "gba"
+ },
+ "gba": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "config.ini",
+     "key": "savegamePath",
+     "section": "ports.qt",
+     "value": "@SAVES@"
+    },
+    {
+     "config": "config.ini",
+     "key": "savestatePath",
+     "section": "ports.qt",
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "gbc": {
+  "sharesEmulator": "gba"
+ },
+ "gopher64": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "mupen64plus.cfg",
+     "key": "SaveSRAMPath",
+     "quote": true,
+     "section": "Core",
+     "value": "@SAVES@/sram/"
+    },
+    {
+     "config": "mupen64plus.cfg",
+     "key": "SaveStatePath",
+     "quote": true,
+     "section": "Core",
+     "value": "@SAVES@/states/"
+    }
+   ]
+  }
+ },
+ "mame": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "mame.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "mame.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "mastersystem": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "mastersystem.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "mastersystem.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "megacd": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "megacd.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "megacd.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "megadrive": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "megadrive.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "megadrive.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "melonds": {
+  "profileSaves": "per-instance"
+ },
+ "mgba": {
+  "sharesEmulator": "gba"
+ },
+ "naomi": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "naomi.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "naomi.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "naomigd": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "naomigd.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "naomigd.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "nes": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "nes.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "nes.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "pcengine": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "pcengine.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "pcengine.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "pcenginecd": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "pcenginecd.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "pcenginecd.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "pcsx2": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "PCSX2.ini",
+     "key": "MemoryCards",
+     "section": "Folders",
+     "value": "@SAVES@/memcards"
+    },
+    {
+     "config": "PCSX2.ini",
+     "key": "Savestates",
+     "section": "Folders",
+     "value": "@SAVES@/sstates"
+    }
+   ]
+  }
+ },
+ "ppsspp": {
+  "profileSaves": {
+   "dirs": [
+    {
+     "config": "../SAVEDATA"
+    },
+    {
+     "config": "../PPSSPP_STATE"
+    }
+   ]
+  }
+ },
+ "rpcs3": {
+  "profileSaves": {
+   "dirs": [
+    {
+     "config": "dev_hdd0/home/00000001/savedata"
+    },
+    {
+     "config": "dev_hdd0/home/00000001/trophy"
+    }
+   ]
+  }
+ },
+ "ryujinx": {
+  "profileSaves": {
+   "dirs": [
+    {
+     "config": "bis/user/save"
+    },
+    {
+     "as": "save-index",
+     "config": "bis/system/save/8000000000000000"
+    }
+   ]
+  }
+ },
+ "saturn": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "saturn.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "saturn.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "sega32x": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "sega32x.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "sega32x.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "sg1000": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "sg1000.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "sg1000.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "shadps4": {
+  "profileSaves": {
+   "dirs": [
+    {
+     "optional": true,
+     "path": "@FLATPAK_DATA@/shadPS4/home/1/savedata"
+    },
+    {
+     "as": "savedata-v015",
+     "optional": true,
+     "path": "@FLATPAK_DATA@/shadPS4/savedata/1"
+    }
+   ]
+  }
+ },
+ "snes9x": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "snes9x.conf",
+     "key": "SRAMDirectory",
+     "section": "Files",
+     "value": "@SAVES@"
+    },
+    {
+     "config": "snes9x.conf",
+     "key": "SaveStateDirectory",
+     "section": "Files",
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "supergrafx": {
+  "profileSaves": {
+   "keys": [
+    {
+     "config": "supergrafx.cfg",
+     "key": "savefile_directory",
+     "quote": true,
+     "value": "@SAVES@/saves"
+    },
+    {
+     "config": "supergrafx.cfg",
+     "key": "savestate_directory",
+     "quote": true,
+     "value": "@SAVES@/states"
+    }
+   ]
+  }
+ },
+ "switch": {
+  "profileSaves": {
+   "dirs": [
+    {
+     "path": "@FLATPAK_DATA@/eden/nand/user/save"
+    }
+   ]
+  }
+ },
+ "wii": {
+  "sharesEmulator": "gamecube"
+ },
+ "xenia": {
+  "profileSaves": {
+   "supported": false,
+   "why": "Xenia keeps title updates and DLC in the same content folder as the saves, so a profile of its own would lose them."
+  }
+ }
+}

@@ -31,6 +31,7 @@ ROOT = Path(_TMP.name)
 os.environ["GAMECORE_HOME"] = str(ROOT / "home")
 os.environ["GAMECORE_PATH"] = str(ROOT / "GameCore")
 os.environ["GAMECORE_DATA"] = str(ROOT / "userdata")
+os.environ["GAMECORE_BACKEND_PORT"] = "9"        # never the box's real core
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))

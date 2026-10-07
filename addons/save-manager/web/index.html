@@ -18,8 +18,22 @@
 .game-files .row { padding-left: 80px; }
 .game + .game { border-top: 1px solid var(--line); }
 .rail-item.is-empty .rail-name { color: var(--ink-3); font-weight: 400; }
+/* Whose saves: one chip per GameCore profile, shown only when the box has profiles. */
+.people { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.people[hidden] { display: none; }
+.person { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px 0 6px;
+  border-radius: 20px; border: 1px solid var(--line-strong); background: none; color: var(--ink);
+  font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
+.person:hover { background: var(--hover); }
+.person[aria-pressed="true"] { background: var(--raised); border-color: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-soft); }
+.avatar { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center;
+  justify-content: center; color: #fff; font-size: 15px; font-weight: 700; flex-shrink: 0; }
+.note.warn { border-left-color: var(--warn); color: var(--ink); display: flex; gap: 10px; align-items: flex-start; }
+.note.warn .icon { color: var(--warn); margin-top: 1px; }
+.copy-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px 12px 80px; border-bottom: 1px solid var(--line); }
+.copy-row > span { font-size: 14px; color: var(--ink-2); margin-right: 4px; }
 @media (max-width: 760px) {
-  .game-files .row { padding-left: 16px; }
+  .game-files .row, .copy-row { padding-left: 16px; }
   .game-head { flex-wrap: nowrap; }
   .game-head .row-actions { width: auto; }
   .game-head .chev, .game-head .btn-label { display: none; }
@@ -33,6 +47,7 @@
     <div class="rail-head">
       <div class="rail-title">Saves</div>
       <div class="rail-sub" id="rail-sub">Loading</div>
+      <div class="people" id="people" role="group" aria-label="Whose saves" hidden></div>
     </div>
     <nav class="rail-list" id="emu-list" aria-label="Systems"><div class="spinner"></div></nav>
   </aside>
@@ -44,6 +59,8 @@
 
 <script>
 let emulators = [], active = null, data = null, openKeys = new Set();
+// GameCore profiles; fewer than two = a box without profiles, shown as it always was.
+let people = [], who = null;
 const $ = id => document.getElementById(id);
 const I = (n, c) => gcIcon(n, c);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -53,9 +70,31 @@ const attr = s => esc(String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
 const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
 function toast(m, err){const e=document.createElement('div');e.className='toast'+(err?' error':'');e.textContent=m;$('toasts').appendChild(e);setTimeout(()=>e.remove(),err?6000:3500)}
 async function jget(u){const r=await fetch(u);if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||r.status);return r.json()}
+// The selected profile on every call (none = the main profile).
+const pq = (sep = '&') => who ? `${sep}profile=${encodeURIComponent(who)}` : '';
+const person = id => people.find(p => p.id === id);
+const owner = () => people.find(p => p.primary);
+const nameOf = id => (person(id) || {}).name || 'Main profile';
+const avatarHTML = p => `<span class="avatar" style="background:${/^#[0-9a-f]{6}$/i.test(p.color) ? p.color : '#4b5563'}" aria-hidden="true">${esc((p.name || '?').trim().charAt(0).toUpperCase())}</span>`;
+
+function renderPeople() {
+  const box = $('people');
+  if (people.length < 2) { box.hidden = true; return; }
+  const sel = who || owner().id;
+  box.hidden = false;
+  box.innerHTML = people.map(p => `
+    <button class="person" aria-pressed="${p.id === sel}" onclick="selectPerson('${attr(p.id)}')">${avatarHTML(p)}${esc(p.name)}</button>`).join('');
+}
+
+async function selectPerson(id) {
+  who = person(id) && !person(id).primary ? id : null;
+  renderPeople();
+  await loadEmulators();
+  if (active) await selectEmu(active);
+}
 
 async function loadEmulators() {
-  try { emulators = await jget('api/emulators'); }
+  try { emulators = await jget(`api/emulators${pq('?')}`); }
   catch (e) { $('emu-list').innerHTML = `<div class="empty error">Couldn't list the systems: ${esc(e.message)}</div>`; return; }
   const avail = emulators.filter(e => e.available);
   $('rail-sub').textContent = `${plural(avail.length, 'system')} with saves`;
@@ -63,7 +102,7 @@ async function loadEmulators() {
     <button class="rail-item ${e.available && !e.games && !e.entries ? 'is-empty' : ''}" id="emu-${e.id}" ${e.available ? `onclick="selectEmu('${e.id}')"` : 'disabled'}
             ${e.id === active ? 'aria-current="true"' : ''}>
       <span class="rail-name">${esc(e.label)}</span>
-      <span class="rail-count">${e.available ? e.games : 'none'}</span>
+      <span class="rail-count">${!e.available ? 'none' : e.shared ? 'shared' : e.games}</span>
     </button>`).join('');
 }
 
@@ -71,13 +110,13 @@ async function selectEmu(id) {
   active = id; openKeys = new Set();
   document.querySelectorAll('.rail-item').forEach(el => el.removeAttribute('aria-current'));
   $(`emu-${id}`)?.setAttribute('aria-current', 'true');
-  history.replaceState(null, '', `?emu=${encodeURIComponent(id)}`);
+  history.replaceState(null, '', `?emu=${encodeURIComponent(id)}${pq()}`);
   await load();
 }
 
 async function load() {
   $('page').innerHTML = '<div class="spinner"></div>';
-  try { data = await jget(`api/games/${active}`); }
+  try { data = await jget(`api/games/${active}${pq('?')}`); }
   catch (e) { $('page').innerHTML = `<div class="page-body"><div class="empty error">Couldn't read the saves: ${esc(e.message)}</div></div>`; return; }
   render();
 }
@@ -87,21 +126,22 @@ function fileIcon(e) {
 }
 
 function fileHTML(e) {
+  const ro = !!data.playing;
   const meta = e.in_card ? `${e.sizeHuman}, inside ${esc(e.in_card)}`
     : `${e.sizeHuman}${e.is_dir ? ', a folder, downloads as .zip' : ''}`;
   let actions;
   if (e.in_card) {
     actions = `<button class="btn" onclick="dlSave('${attr(e.id)}','${attr(e.save_key)}')" title="Export just this game's save (.mcs, .psu or .gci)">${I('download','sm')}Export</button>
-       <button class="btn danger icon-only" onclick="delSave('${attr(e.id)}','${attr(e.save_key)}','${attr(e.name)}')" title="Delete this save from the card (the card is backed up first)" aria-label="Delete">${I('trash','sm')}</button>`;
+       ${ro ? '' : `<button class="btn danger icon-only" onclick="delSave('${attr(e.id)}','${attr(e.save_key)}','${attr(e.name)}')" title="Delete this save from the card (the card is backed up first)" aria-label="Delete">${I('trash','sm')}</button>`}`;
   } else if (e.card) {
     const ci = e.id.split('/')[0];
     actions = `<button class="btn icon-only" onclick="dl('${attr(e.id)}')" title="Download the whole card" aria-label="Download">${I('download','sm')}</button>
-       <label class="btn" title="Add one game's .mcs, .psu or .gci save to this card">${I('plus','sm')}Add a save
+       ${ro ? '' : `<label class="btn" title="Add one game's .mcs, .psu or .gci save to this card">${I('plus','sm')}Add a save
          <input type="file" accept=".mcs,.mcr,.psx,.psu,.gci" onchange="inject(this.files[0], ${ci}, '${attr(e.name)}');this.value=''"></label>
-       <button class="btn danger icon-only" onclick="del('${attr(e.id)}','${attr(e.name)}')" title="Delete the whole card" aria-label="Delete">${I('trash','sm')}</button>`;
+       <button class="btn danger icon-only" onclick="del('${attr(e.id)}','${attr(e.name)}')" title="Delete the whole card" aria-label="Delete">${I('trash','sm')}</button>`}`;
   } else {
     actions = `<button class="btn icon-only" onclick="dl('${attr(e.id)}')" title="Download" aria-label="Download">${I('download','sm')}</button>
-       <button class="btn danger icon-only" onclick="del('${attr(e.id)}','${attr(e.name)}')" title="Delete" aria-label="Delete">${I('trash','sm')}</button>`;
+       ${ro ? '' : `<button class="btn danger icon-only" onclick="del('${attr(e.id)}','${attr(e.name)}')" title="Delete" aria-label="Delete">${I('trash','sm')}</button>`}`;
   }
   return `
     <div class="row">
@@ -135,8 +175,17 @@ function gameHTML(g) {
         </div>
         <span class="chev">${I('chevron')}</span>
       </div>
-      <div class="game-files">${g.entries.map(fileHTML).join('')}</div>
+      <div class="game-files">${copyHTML(g)}${g.entries.map(fileHTML).join('')}</div>
     </div>`;
+}
+
+// "Copy to": every other profile, inside an opened game.
+function copyHTML(g) {
+  if (people.length < 2 || data.playing) return '';
+  const from = who || owner().id;
+  const to = people.filter(p => p.id !== from);
+  return `<div class="copy-row"><span>Copy this game's saves to</span>${to.map(p =>
+    `<button class="person" onclick="copyGame('${attr(g.key)}','${attr(g.title)}','${attr(p.id)}')">${avatarHTML(p)}${esc(p.name)}</button>`).join('')}</div>`;
 }
 
 function render() {
@@ -147,17 +196,30 @@ function render() {
     return seen.has(k) ? false : (seen.add(k), true);
   });
   const hasAny = data.games.length || data.other.length;
+  const ro = !!data.playing;
+  const whose = who && !data.shared ? `${nameOf(who)}'s saves, ` : '';
   let html = `
     <header class="page-head">
       <div>
         <h1 class="page-title">${esc(emu ? emu.label : active)}</h1>
-        <div class="page-meta">${esc(data.base || '')}</div>
+        <div class="page-meta">${esc(whose + (data.folder || data.base || ''))}</div>
       </div>
       <div class="page-actions">
         ${hasAny ? `<button class="btn primary" onclick="dlAll()" title="One zip with every save, save state and memory card of this system">${I('download','sm')}Back up everything</button>` : ''}
       </div>
     </header>
     <div class="page-body">`;
+
+  if (data.shared) {
+    $('page').innerHTML = html + `<section class="section"><p class="note">Every profile shares the ${esc(emu ? emu.label : active)} saves.
+      They are on ${esc(owner().name)}'s page.</p>
+      <p><button class="btn" onclick="selectPerson('${attr(owner().id)}')">Show ${esc(owner().name)}'s saves</button></p></section></div>`;
+    return;
+  }
+  if (ro) {
+    html += `<p class="note warn">${I('alert')}<span><b>${esc(data.playing)}</b><br>
+      Until then the saves can be looked at and downloaded, not changed. If no game is running, start and quit one game of this system.</span></p>`;
+  }
 
   html += `<section class="section">
       <div class="section-head"><h2 class="section-title">Games</h2><span class="section-count">${data.games.length}</span></div>
@@ -172,7 +234,7 @@ function render() {
     </section>`;
   }
 
-  html += `<section class="section">
+  if (!ro) html += `<section class="section">
       <div class="section-head"><h2 class="section-title">Restore</h2></div>
       <div class="drops">${zones.map(dz).join('')}${dzFull()}</div>
     </section>`;
@@ -181,7 +243,7 @@ function render() {
     html += `<section class="section">
       <div class="section-head"><h2 class="section-title">Automatic backups</h2><span class="section-count">${data.backups.length}</span></div>
       <p class="note">Taken before every overwrite, restore or delete; the 3 most recent per file are kept. Putting one back backs up the current version first.</p>
-      <div class="list">${data.backups.map(bakHTML).join('')}</div>
+      <div class="list">${data.backups.map(b => bakHTML(b, ro)).join('')}</div>
     </section>`;
   }
 
@@ -189,7 +251,7 @@ function render() {
   $('page').innerHTML = html;
 }
 
-function bakHTML(b) {
+function bakHTML(b, ro) {
   return `
     <div class="row">
       <span class="row-icon">${I('history')}</span>
@@ -197,10 +259,10 @@ function bakHTML(b) {
         <div class="row-title">${esc(b.name)}</div>
         <div class="row-meta">${esc(b.when)}, ${b.sizeHuman}${b.orig_exists ? '' : ', <b>the original was deleted</b>'}</div>
       </div>
-      <div class="row-actions">
+      ${ro ? '' : `<div class="row-actions">
         <button class="btn" onclick="restoreBak('${attr(b.id)}','${attr(b.name)}','${attr(b.when)}')" title="Put this backup back in place (the current version is backed up first)">${I('restore','sm')}Put back</button>
         <button class="btn danger icon-only" onclick="delBak('${attr(b.id)}','${attr(b.name)}')" title="Delete this backup" aria-label="Delete">${I('trash','sm')}</button>
-      </div>
+      </div>`}
     </div>`;
 }
 
@@ -252,10 +314,10 @@ function guideHTML(g) {
 }
 
 function toggle(key){ openKeys.has(key)?openKeys.delete(key):openKeys.add(key); render(); }
-function dl(id){ window.location = `api/saves/${active}/download?id=${encodeURIComponent(id)}`; }
-function dlSave(id, serial){ window.location = `api/saves/${active}/download?id=${encodeURIComponent(id)}&save=${encodeURIComponent(serial)}`; }
-function dlGame(key){ window.location = `api/games/${active}/download?key=${encodeURIComponent(key)}`; }
-function dlAll(){ window.location = `api/saves/${active}/download-all`; }
+function dl(id){ window.location = `api/saves/${active}/download?id=${encodeURIComponent(id)}${pq()}`; }
+function dlSave(id, serial){ window.location = `api/saves/${active}/download?id=${encodeURIComponent(id)}&save=${encodeURIComponent(serial)}${pq()}`; }
+function dlGame(key){ window.location = `api/games/${active}/download?key=${encodeURIComponent(key)}${pq()}`; }
+function dlAll(){ window.location = `api/saves/${active}/download-all${pq('?')}`; }
 
 async function send(url, opts, ok, fail) {
   try {
@@ -269,48 +331,60 @@ function form(file) { const f = new FormData(); f.append('file', file); return f
 
 function delSave(id, saveKey, name) {
   if (!confirm(`Delete "${name}" from this memory card?\nThe whole card is backed up first.`)) return;
-  send(`api/saves/${active}?id=${encodeURIComponent(id)}&save=${encodeURIComponent(saveKey)}`, { method: 'DELETE' },
+  send(`api/saves/${active}?id=${encodeURIComponent(id)}&save=${encodeURIComponent(saveKey)}${pq()}`, { method: 'DELETE' },
        () => `Deleted from the card, backup kept: ${name}`, "Couldn't delete");
 }
 function restoreBak(id, name, when) {
   if (!confirm(`Put back the backup of "${name}" from ${when}?\nThe current version is backed up first.`)) return;
-  send(`api/backups/${active}/restore?id=${encodeURIComponent(id)}`, { method: 'POST' },
+  send(`api/backups/${active}/restore?id=${encodeURIComponent(id)}${pq()}`, { method: 'POST' },
        d => `Put back: ${d.restored}`, "Couldn't put it back");
 }
 function delBak(id, name) {
   if (!confirm(`Delete this backup of "${name}"?\nIt is the safety copy itself: this can't be undone.`)) return;
-  send(`api/backups/${active}?id=${encodeURIComponent(id)}`, { method: 'DELETE' },
+  send(`api/backups/${active}?id=${encodeURIComponent(id)}${pq()}`, { method: 'DELETE' },
        () => `Backup deleted: ${name}`, "Couldn't delete");
 }
 function upFull(file) {
   if (!file) return;
-  send(`api/saves/${active}/upload-full`, { method: 'POST', body: form(file) },
+  send(`api/saves/${active}/upload-full${pq('?')}`, { method: 'POST', body: form(file) },
        d => `Restored: ${d.restored.join(', ')}. Backups kept.`, "Couldn't restore");
 }
 function inject(file, col, cardName) {
   if (!file) return;
-  send(`api/saves/${active}/upload?collection=${col}&card=${encodeURIComponent(cardName)}`, { method: 'POST', body: form(file) },
+  send(`api/saves/${active}/upload?collection=${col}&card=${encodeURIComponent(cardName)}${pq()}`, { method: 'POST', body: form(file) },
        d => `Added to ${cardName}: ${d.restored.join(', ')}. Card backed up.`, "Couldn't add");
 }
 function del(id, name) {
   if (!confirm(`Delete "${name}"?\nA backup is kept, but the game won't see this save any more.`)) return;
-  send(`api/saves/${active}?id=${encodeURIComponent(id)}`, { method: 'DELETE' },
+  send(`api/saves/${active}?id=${encodeURIComponent(id)}${pq()}`, { method: 'DELETE' },
        () => `Deleted, backup kept: ${name}`, "Couldn't delete");
+}
+function copyGame(key, title, to) {
+  const from = who || owner().id;
+  if (!confirm(`Copy the saves of "${title}" from ${nameOf(from)} to ${nameOf(to)}?\n${nameOf(to)}'s current save is backed up first.`)) return;
+  send(`api/games/${active}/copy?key=${encodeURIComponent(key)}&source=${encodeURIComponent(from)}&target=${encodeURIComponent(to)}`,
+       { method: 'POST' }, d => `Copied to ${nameOf(to)}: ${d.copied.join(', ')}. What it replaced is in ${nameOf(to)}'s backups.`, "Couldn't copy");
 }
 function dropUp(ev, col){ ev.preventDefault(); ev.currentTarget.classList.remove('hover'); const f=ev.dataTransfer.files[0]; if(f) up(f,col); }
 function up(file, col) {
   if (!file) return;
-  send(`api/saves/${active}/upload?collection=${col}`, { method: 'POST', body: form(file) },
+  send(`api/saves/${active}/upload?collection=${col}${pq()}`, { method: 'POST', body: form(file) },
        d => `Restored: ${d.restored.join(', ')}. Backup kept.`, "Couldn't restore");
 }
 
 // Open straight on a system: the one in the URL, else the first with saves.
-loadEmulators().then(() => {
-  const q = new URLSearchParams(location.search).get('emu');
+(async () => {
+  const params = new URLSearchParams(location.search);
+  people = await jget('api/profiles').catch(() => []);
+  const asked = person(params.get('profile'));
+  who = asked && !asked.primary ? asked.id : null;
+  renderPeople();
+  await loadEmulators();
+  const q = params.get('emu');
   const first = emulators.find(e => e.id === q && e.available) || emulators.find(e => e.available);
   if (first) selectEmu(first.id);
   else $('page').innerHTML = '<div class="page-body"><div class="empty">No save on this box yet. Saves show up here after a game has been played once.</div></div>';
-});
+})();
 </script>
 </body>
 </html>

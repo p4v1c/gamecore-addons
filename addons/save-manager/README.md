@@ -29,6 +29,35 @@ per-emulator transfer guide in the UI and a standalone PC export tool.
   [`tools/gamecore-save-export.py`](tools/gamecore-save-export.py) which does
   it automatically.
 
+## GameCore profiles
+
+On a box with profiles (GameCore v1.3.7+), the page shows one chip per
+profile above the systems. Each profile sees its own saves; the primary keeps
+the emulators' usual folders, the others live under
+`<DATA>/emu/profile-saves/<profile id>/<system>/`, laid out per emulator as
+the core's packs declare (`profiles.py`). A box without profiles (the first
+profile still unnamed), or a core that doesn't answer, shows the page exactly
+as before.
+
+- **Copy a game's saves to another profile**: open the game, pick a profile
+  under "Copy this game's saves to". What it replaces is backed up first and
+  listed under that profile's backups; the source is only read. A game inside
+  a PS1/PS2/GameCube memory card goes into the other profile's own card (it
+  must have one: play a game of that system as that profile once).
+- **Shared saves** stay shared: Xbox 360, and the save states of Dolphin,
+  RPCS3 and Azahar, are on the primary's page for everyone.
+- **While a profile plays.** For Switch (Eden), PS3, PSP, Wii U, PS4 and
+  Ryujinx, GameCore swaps the emulator's save folder for the profile's during
+  a game (the owner's waits as `<name>.gamecore-primary`). Until the game
+  closes, the addon lists the owner's saves from there, never the profile's,
+  and refuses every change on that system: "Sam is playing Nintendo Switch:
+  close the game first." Downloads still work. A crash can leave the swap in
+  place: start and quit one game of that system to end it.
+- **Full backup**: the primary's "Back up everything" also holds every other
+  profile's saves, under `profiles/<name>-<id>/`; restoring the zip puts each
+  back in its profile. A profile's own backup uses the usual names and can be
+  restored into any profile.
+
 ## Where each emulator keeps its saves
 
 On the box (as configured by the GameCore installer — first existing path wins):
@@ -95,8 +124,12 @@ and converts foreign N64 saves (Project64/mupen64plus word order + gopher64's
 
 ## API
 
+Every endpoint takes `&profile=<id>` to act on that profile's saves (the
+primary's id, or none, is the primary).
+
 | Endpoint | |
 |---|---|
+| `GET /api/profiles` | the box's profiles, `[]` when it has none |
 | `GET /api/emulators` | systems + availability + game counts |
 | `GET /api/games/{emu}` | games (entries, icons), shared files, collections, PC guide |
 | `GET /api/games/{emu}/icon?key=` | game icon (savedata ICON0, Wii U TGA, cover) |
@@ -106,6 +139,7 @@ and converts foreign N64 saves (Project64/mupen64plus word order + gopher64's
 | `POST /api/saves/{emu}/upload?collection=` (`&card=`) | restore one file/zip / inject into a card |
 | `POST /api/saves/{emu}/upload-full` | restore a full-backup / normalized zip |
 | `DELETE /api/saves/{emu}?id=` (`&save=`) | delete an entry / one in-card save |
+| `POST /api/games/{emu}/copy?key=&source=&target=` | copy one game's saves between two profiles |
 | `GET /api/backups/{emu}` | list the automatic backups |
 | `POST /api/backups/{emu}/restore?id=` | put a backup back in place |
 | `DELETE /api/backups/{emu}?id=` | delete a backup |
@@ -118,4 +152,9 @@ built in a temp dir:
 ```
 python tests/test_memcard.py     # PS1/PS2/GC card engine (stdlib only)
 python tests/test_api.py         # full API round-trips (needs fastapi + httpx)
+python tests/test_profiles.py    # profiles: layout vs the core's packs, swap guard, copies
 ```
+
+`GAMECORE_SRC=<GamecoreRenew checkout> python tests/test_profiles.py` also
+checks the layout against that checkout's `catalog/*/pack.json`. Refresh
+`tests/fixtures/core_profile_saves.json` from it when a pack changes.

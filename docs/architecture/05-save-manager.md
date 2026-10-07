@@ -1,8 +1,10 @@
 # 5 — save-manager (:8772, `/saves`)
 
-The largest addon: `server.py` 831 l., `catalog.py` 849, `memcard.py` 842,
-`guide.py` 191, `ryujinx.py` 98, plus `tools/gamecore-save-export.py` (550) and
-two test modules.
+The largest addon: `server.py` (routes), `catalog.py` (where saves are, which
+game they belong to), `memcard.py` (card codecs), `profiles.py` (GameCore
+profiles), `archive.py` (zip names and the normalized formats), `backups.py`,
+`guide.py`, `ryujinx.py`, plus `tools/gamecore-save-export.py` and the
+`tests/` modules.
 
 It browses, backs up, restores and deletes saves for every emulator on the box
 — including the individual game saves *inside* a shared PlayStation memory
@@ -133,13 +135,16 @@ Details that are easy to get wrong and are already handled:
 | Route | Function | Notes |
 |---|---|---|
 | `GET /api/health` | `health()` | |
+| `GET /api/profiles` | `list_profiles()` | the core's profiles, `[]` = no profiles |
 | `GET /api/emulators` | `list_emulators()` | catalog entries that exist on this box |
 | `GET /api/games/{emu_id}` | `list_games(emu_id)` | saves **grouped by game** (icon + name + files) |
 | `GET /api/games/{emu_id}/icon` | `game_icon(emu_id, key)` | savedata icon, or the GameCore cover |
 
-`_entries(emu_id, internal)` runs the scan, `_collection_dir(emu_id, ci)`
-resolves a collection directory, `_resolve_entry(emu_id, entry_id)` maps an
-entry id (`'<collection>/<relative path>'`) back to a path.
+Every route takes an optional `profile=<id>` (see [Profiles](#profiles)).
+`_view(emu_id, profile, write)` turns it into a `profiles.View`, `_entries(view,
+internal)` runs the scan, `_locate(view, ci, rel)` and `_resolve_entry(view,
+entry_id)` map an entry id (`'<collection>/<relative path>'`) back to a path,
+with the containment checks.
 `_tga_to_png(data)` converts Wii U `iconTex.tga` (type-2 uncompressed 24/32-bit)
 because browsers do not read TGA.
 
@@ -153,15 +158,17 @@ because browsers do not read TGA.
 | `GET /api/games/{emu_id}/download` | `download_game(emu_id, key)` | everything one game is made of |
 | `GET /api/saves/{emu_id}/download-all` | `download_all(emu_id)` | full emulator backup |
 | `POST /api/saves/{emu_id}/upload-full` | `upload_full(emu_id, file)` | restore a whole-game / full backup |
+| `POST /api/games/{emu_id}/copy` | `copy_game(emu_id, key, source, target)` | one game's saves, profile to profile |
 
-`_zip_entries(items)` builds the archive (backups are never included),
-`_arc_items(emu_id, base, cols, entries)` decides each member's name.
+`archive.zip_entries(items)` builds the archive (backups are never included),
+`archive.arc_items(emu_id, base, cols, entries)` decides each member's name
+from the entry's collection, never from where it sits on disk.
 
 ### Backups
 
-`_backup(path, prune)` snapshots before every destructive operation and prunes
-old ones. `_backups(emu_id)`, `list_backups`, `restore_backup`, `delete_backup`
-expose them. Restoring a backup **backs up the current state first**, so the
+`backups.backup(path, prune)` snapshots before every destructive operation and
+prunes old ones. `backups.listing(view)`, `list_backups`, `restore_backup`,
+`delete_backup` expose them. Restoring a backup **backs up the current state first**, so the
 operation is reversible.
 
 ## The normalized archive format
@@ -174,7 +181,7 @@ Zip members come in two flavours:
 | **normalized** | `switch-title/<TID>/…`, `x360-title/…`, `ps4-title/…` | **yes** — carries the title id |
 
 Normalized members are what lets a save move between two different boxes.
-`_restore_normalized(emu_id, base, zf, norm)` remaps them onto this install's
+`archive.restore_normalized(view, zf, norm)` remaps them onto this install's
 own layout — for Ryujinx it resolves the target container through
 `ryujinx.title_map()`, writes both `0` (committed) and `1` (working) copies,
 and refuses with a clear message when the game has no container yet
@@ -182,6 +189,51 @@ and refuses with a clear message when the game has no container yet
 the right account directory for the yuzu-family layout: the profile that
 already holds the title, else the one with the most saves — **not** the first
 sorted, which is usually the empty all-zero account.
+
+A full backup of the primary also carries every other profile's saves, each
+under `profiles/<name>-<id>/` with the same member names inside;
+`upload_full` sends those members back to that profile (refused when the box
+has no such profile).
+
+## Profiles
+
+GameCore (v1.3.7+) gives each profile its own saves. `profiles.py` mirrors
+where they are; the core's `catalog/<id>/pack.json` `profileSaves` blocks are
+the source, and `tests/test_profiles.py` checks `LAYOUT` against them
+(`tests/fixtures/core_profile_saves.json`, or a checkout via `GAMECORE_SRC`).
+
+| Who | Where |
+|---|---|
+| no profiles (unnamed primary, or the core does not answer `GET /api/profiles`) | everything as before |
+| primary | the emulators' usual folders |
+| any other profile | `<DATA>/emu/profile-saves/<id>/<system>/`, laid out per pack |
+
+`View(emu_id, base, profile)` is that map for one emulator:
+`sources(ci)` lists the folders to scan for a collection (none when the
+profile shares it, like Dolphin's states), `keeps(cdir, rel)` filters what is
+not this profile's, `path(ci, rel)` finds an entry, `at(rel)` a folder. An
+entry has the same id in every view, so a copy maps it straight across.
+
+**The swap.** For an emulator with no save option (`dirs` in the pack: Eden,
+RPCS3, PPSSPP, Cemu, shadPS4, Ryujinx), the core renames the owner's folder
+`<name>.gamecore-primary` and links the profile's folder in its place for the
+length of a game; after a crash it stays until the next launch.
+`profiles.holder(emu_id, base)` sees it (a link into `profile-saves`), and
+for `keys` emulators reads the core's `.primary.json` and the option it
+changed. While a holder exists:
+
+- the primary is read from `<name>.gamecore-primary`; nothing reached through
+  the link is ever shown as, or written for, the owner;
+- every write on that emulator (upload, delete, restore, card edits, backups,
+  copy) is refused with 409 "<profile> is playing <system>: close the game first."
+
+**Copy** (`_copy_plan`): every destination is checked before anything is
+written. Files and folders are copied whole after a backup of what they
+replace. A game inside a shared PS1/PS2/GC card is exported from the source
+card and imported into the destination's own card (replacing its old copy);
+no card there is a refusal, not a new card. Collections the destination
+shares (states of Dolphin, RPCS3, Azahar) and melonDS players 2-4 are left
+out. Ryujinx is refused: its folders are numbered per profile index.
 
 ## Restore safety
 

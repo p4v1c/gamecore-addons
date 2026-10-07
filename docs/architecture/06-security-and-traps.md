@@ -69,7 +69,7 @@ single-file uploads (`safe_filename`).
 
 Every destructive operation snapshots first:
 
-- `save-manager/_backup(path, prune)` before restore, upload-over and delete;
+- `save-manager/backups.py` `backup(path, prune)` before restore, upload-over, delete and copy;
 - `rpcs3-manager/backup(path)` before editing a config or patch file.
 
 The backup unit is chosen carefully: **the entry inside its collection**, not
@@ -123,6 +123,12 @@ from another box will not match.
 one loses saves silently.
 
 **A zip member is attacker-controlled input**, even from a friendly LAN.
+
+**A GameCore profile's game swaps save folders.**
+While it plays, Eden's, RPCS3's, PPSSPP's, Cemu's or shadPS4's save folder is a
+link into `<DATA>/emu/profile-saves/`. Following it would show that profile's
+saves as the owner's and write the owner's restores into them: go through
+`profiles.View`, and let `_view(..., write=True)` refuse.
 
 **Memory-card writes are irreversible for the user.**
 Run `pytest addons/save-manager/tests` before and after touching

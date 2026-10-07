@@ -807,7 +807,8 @@ def _res_n3ds_state(base, cdir, rel):
 
 
 def _res_wiiu(base, cdir, rel):
-    hi, lo = rel.parts[0].lower(), rel.parts[1].lower()
+    # One part: a profile's folder, which only holds 00050000 (see profiles.py).
+    hi, lo = (p.lower() for p in (rel.parts if len(rel.parts) == 2 else ("00050000", *rel.parts)))
     if hi != "00050000":                    # updates/DLC/system saves
         return "", "", None
     d = cdir / rel
@@ -949,22 +950,25 @@ def _candidates(cdir: Path, col: dict):
         yield rel, p.is_dir()
 
 
-def scan(emu_id: str) -> tuple[Path | None, list[dict]]:
-    """All entries of an emulator with their game identity resolved."""
+def scan(emu_id: str, view) -> tuple[Path | None, list[dict]]:
+    """All entries of an emulator with their game identity resolved, as the
+    profile of `view` (profiles.View: where its folders are) owns them."""
     base = resolve_base(emu_id)
     if not base:
         return None, []
     out = []
     for ci, col in enumerate(CATALOG[emu_id]["collections"]):
-        cdir = base / col["subpath"] if col["subpath"] else base
-        if not cdir.is_dir():
-            continue
         resolver = _RESOLVERS[col["group"]]
-        for rel, is_dir in _candidates(cdir, col):
-            key, title, icon = resolver(base, cdir, rel)
-            out.append({
-                "ci": ci, "rel": str(rel), "path": cdir / rel,
-                "kind": col["kind"], "mode": col["mode"], "is_dir": is_dir,
-                "key": key, "title": title, "icon": icon,
-            })
+        for cdir, glob, prefix in view.sources(ci):
+            if not cdir.is_dir():
+                continue
+            for rel, is_dir in _candidates(cdir, {**col, "glob": glob}):
+                if not view.keeps(cdir, rel):
+                    continue
+                key, title, icon = resolver(base, cdir, rel)
+                out.append({
+                    "ci": ci, "rel": str(PurePosixPath(prefix, rel)), "path": cdir / rel,
+                    "kind": col["kind"], "mode": col["mode"], "is_dir": is_dir,
+                    "key": key, "title": title, "icon": icon,
+                })
     return base, out

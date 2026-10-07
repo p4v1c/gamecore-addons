@@ -45,6 +45,7 @@ Environment=GAMECORE_PATH=${GAMECORE_PATH}
 Environment=GAMECORE_DATA=${GAMECORE_DATA}
 Environment=ADDON_DATA_DIR=${ADDON_DATA_DIR}
 Environment=ADDON_PORT=${PORT}
+Environment=GAMECORE_BACKEND_PORT=${GAMECORE_BACKEND_PORT:-8765}
 Environment=ADDON_BASE=/saves
 WorkingDirectory=${ADDON_DIR}
 ExecStart=${ADDON_DIR}/.venv/bin/python server.py

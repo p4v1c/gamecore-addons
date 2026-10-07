@@ -10,7 +10,7 @@ import re
 import shutil
 import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from fastapi import HTTPException
 
@@ -51,11 +51,11 @@ def _yuzu_user_for(user_root: Path, tid: str) -> str:
         1 for c in u.iterdir() if c.is_dir() and ".bak-" not in c.name)).name
 
 
-def restore_normalized(emu_id: str, base: Path, zf: zipfile.ZipFile,
-                        norm: list) -> list[str]:
+def restore_normalized(view, zf: zipfile.ZipFile, norm: list) -> list[str]:
     """Write switch-title/… x360-title/… ps4-title/… members onto this
-    install's own layout (see arc_items). `norm` = [(ZipInfo, rel parts)]."""
-    restored = []
+    install's own layout (see arc_items), in one profile's folders
+    (profiles.View). `norm` = [(ZipInfo, rel parts)]."""
+    emu_id, base, restored = view.emu_id, view.base, []
     if emu_id in NORM_TAGS["switch-title"]:
         # group by (title id, save type); target the local save container
         groups: dict = {}
@@ -63,7 +63,12 @@ def restore_normalized(emu_id: str, base: Path, zf: zipfile.ZipFile,
             if len(parts) < 4 or not re.fullmatch(r"[0-9A-Fa-f]{16}", parts[1]):
                 raise HTTPException(400, f"malformed switch save path '{m.filename}'")
             groups.setdefault((parts[1].upper(), parts[2]), []).append((m, parts[3:]))
-        ryujinx_layout = (base / "bis/user/save").is_dir()
+        ryujinx_saves = view.at("bis/user/save")
+        ryujinx_layout = ryujinx_saves is not None and ryujinx_saves.is_dir()
+        if ryujinx_layout and view.profile:
+            # title_map reads the owner's index; a profile has its own.
+            raise HTTPException(400, "Ryujinx saves can't be restored into a profile. "
+                                     "Restore them to the main profile instead.")
         tmap = ryu.title_map(base) if ryujinx_layout else {}
         for (tid, typ), files in sorted(groups.items()):
             if ryujinx_layout:
@@ -87,7 +92,7 @@ def restore_normalized(emu_id: str, base: Path, zf: zipfile.ZipFile,
                         dest.write_bytes(zf.read(m))
                 restored.append(f"{tid} → {d.name}")
             else:                        # yuzu-family layout: dir name IS the title id
-                user_root = base / "nand/user/save/0000000000000000"
+                user_root = view.at("nand/user/save/0000000000000000")
                 user = _DEVICE_USER if typ in _DEVICE_TYPES else _yuzu_user_for(user_root, tid)
                 d = user_root / user / tid
                 _backup(d)
@@ -124,8 +129,8 @@ def restore_normalized(emu_id: str, base: Path, zf: zipfile.ZipFile,
         return restored
 
     if emu_id == "shadps4":
-        root = next((base / s for s in ("home/1/savedata", "savedata/1")
-                     if (base / s).is_dir()), base / "home/1/savedata")
+        root = next((view.at(s) for s in ("home/1/savedata", "savedata/1")
+                     if view.at(s).is_dir()), view.at("home/1/savedata"))
         done = set()
         for m, parts in norm:
             if len(parts) < 4:
@@ -175,7 +180,9 @@ def arc_items(emu_id: str, base: Path, cols: list, entries: list) -> list[tuple[
               user dirs are install-specific)
       X360    x360-title/<TitleID>/…                  (Xenia profile XUIDs differ)
       PS4     ps4-title/<CUSA…>/<savedir>/…           (shadPS4 moved dirs in v0.16)
-    /upload-full maps those prefixes back onto the local install."""
+    /upload-full maps those prefixes back onto the local install. Plain names
+    come from the entry's collection, never from where it sits on disk: a
+    profile's saves are named as the owner's are."""
     items = []
     for e in entries:
         col, p = cols[e["ci"]], e["path"]
@@ -194,8 +201,7 @@ def arc_items(emu_id: str, base: Path, cols: list, entries: list) -> list[tuple[
             items.append((p, f"x360-title/{p.name.upper()}"))
             continue
         elif e["key"] and emu_id == "shadps4":
-            rel = p.relative_to(base / col["subpath"])
-            items.append((p, f"ps4-title/{rel.as_posix()}"))
+            items.append((p, f"ps4-title/{e['rel']}"))
             continue
-        items.append((p, p.relative_to(base).as_posix()))
+        items.append((p, PurePosixPath(col["subpath"], e["rel"]).as_posix()))
     return items

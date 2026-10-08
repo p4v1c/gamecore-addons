@@ -125,7 +125,7 @@ one loses saves silently.
 **A zip member is attacker-controlled input**, even from a friendly LAN.
 
 **A GameCore profile's game swaps save folders.**
-While it plays, Eden's, RPCS3's, PPSSPP's, Cemu's or shadPS4's save folder is a
+While it plays, Ryujinx's, RPCS3's, PPSSPP's, Cemu's or shadPS4's save folder is a
 link into `<DATA>/emu/profile-saves/`. Following it would show that profile's
 saves as the owner's and write the owner's restores into them: go through
 `profiles.View`, and let `_view(..., write=True)` refuse.

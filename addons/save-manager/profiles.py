@@ -60,9 +60,11 @@ LAYOUT = {
     "rpcs3": _layout("rpcs3", dirs={"dev_hdd0/home/00000001/savedata": "savedata",
                                     "dev_hdd0/home/00000001/trophy": "trophy"}),
     "cemu": _layout("cemu", dirs={"mlc01/usr/save/00050000": "save"}),
-    "ryujinx": _layout("ryujinx", dirs={"bis/user/save": "save",
-                                        "bis/system/save/8000000000000000": "save-index"}),
-    "switch": _layout("switch", dirs={"nand/user/save": "save"}),
+    "switch": _layout("switch", dirs={"bis/user/save": "user-save",
+                                      "bis/system/save/8000000000000000": "save-index"}),
+    # Not in the core any more: a profile's Eden saves stay where the Eden-era
+    # pack put them, <profile>/switch/save (EDEN_ERA in the tests).
+    "eden": _layout("switch", dirs={"nand/user/save": "save"}),
     "shadps4": _layout("shadps4", dirs={"home/1/savedata": "savedata", "savedata/1": "savedata-v015"}),
     # xenia: not separated by the core (title updates share the save folder).
 }

@@ -44,10 +44,14 @@ as before.
   listed under that profile's backups; the source is only read. A game inside
   a PS1/PS2/GameCube memory card goes into the other profile's own card (it
   must have one: play a game of that system as that profile once).
+- **Eden (before Ryujinx)**: the saves Eden kept before GameCore went back to
+  Ryujinx, the primary's and each profile's. Read only: browse and download
+  (`switch-title/…` zips, restorable into Ryujinx); upload, delete, restore
+  and copy answer 403. GameCore copies them into Ryujinx itself.
 - **Shared saves** stay shared: Xbox 360, and the save states of Dolphin,
   RPCS3 and Azahar, are on the primary's page for everyone.
-- **While a profile plays.** For Switch (Eden), PS3, PSP, Wii U, PS4 and
-  Ryujinx, GameCore swaps the emulator's save folder for the profile's during
+- **While a profile plays.** For Switch (Ryujinx), PS3, PSP, Wii U and PS4,
+  GameCore swaps the emulator's save folder for the profile's during
   a game (the owner's waits as `<name>.gamecore-primary`). Until the game
   closes, the addon lists the owner's saves from there, never the profile's,
   and refuses every change on that system: "Sam is playing Nintendo Switch:
@@ -74,8 +78,8 @@ On the box (as configured by the GameCore installer — first existing path wins
 | PSP | PPSSPP | `…/ppsspp/PSP/SAVEDATA/<GAMEID…>/` | `PSP/PPSSPP_STATE/` |
 | Wii U | Cemu | `…/Cemu/mlc01/usr/save/00050000/<tid-lo>/` | — (none in Cemu) |
 | 3DS | Azahar | `…/azahar-emu/sdmc/Nintendo 3DS/<id0>/<id1>/title/00040000/<tid-lo>/data/00000001/` (+ `extdata`) | `states/<tid>.<slot>.cst` |
-| Switch | Ryujinx | `…/Ryujinx/bis/user/save/<install-specific id>/{0,1}/` | — |
-| Switch | Eden | `…/eden/nand/user/save/0000000000000000/<user>/<titleid>/` (device saves: user `000…0`) | — |
+| Switch | Ryujinx (`switch`) | `…/Ryujinx/bis/user/save/<install-specific id>/{0,1}/` | — |
+| Switch | Eden (`eden`, read only) | `…/eden/nand/user/save/0000000000000000/<user>/<titleid>/` (device saves: user `000…0`) | — |
 | X360 | Xenia Canary | `lib/xenia/content/<XUID>/<TitleID>/00000001/` (+ `Headers/`) | — |
 | PS4 | shadPS4 | `…/shadPS4/home/1/savedata/<CUSA…>/` (≤0.15: `savedata/1/<CUSA…>/`) | — |
 

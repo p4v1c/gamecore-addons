@@ -322,13 +322,13 @@ def test_zip_roundtrip():
 
 def test_ryujinx():
     print("Ryujinx (Switch)")
-    g = games("ryujinx")
+    g = games("switch")
     keys = {x["key"]: x for x in g["games"]}
     check("ExtraData save identified", "0100152000022000" in keys, str(list(keys)))
     check("known title resolved", keys.get("0100152000022000", {}).get("title") == "Mario Kart 8 Deluxe")
     check("indexer-only save identified", "01007EF00011E000" in keys)
 
-    r = client.get("/api/games/ryujinx/download", params={"key": "0100152000022000"})
+    r = client.get("/api/games/switch/download", params={"key": "0100152000022000"})
     zf = zipfile.ZipFile(io.BytesIO(r.content))
     check("normalized switch-title zip",
           zf.namelist() == ["switch-title/0100152000022000/1/game.sav"], str(zf.namelist()))
@@ -337,7 +337,7 @@ def test_ryujinx():
     base = HOME / ".var/app/io.github.ryubing.Ryujinx/config/Ryujinx"
     sdir = base / "bis/user/save/0000000000000001"
     (sdir / "0/game.sav").write_bytes(b"corrupted")
-    r2 = client.post("/api/saves/ryujinx/upload-full",
+    r2 = client.post("/api/saves/switch/upload-full",
                      files={"file": ("mk8.zip", io.BytesIO(r.content))})
     check("normalized restore ok", r2.status_code == 200, r2.text)
     check("restored into 0/", (sdir / "0/game.sav").read_bytes() == b"mk8" * 100)
@@ -348,7 +348,7 @@ def test_ryujinx():
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("switch-title/0100000000010000/1/save.bin", b"odyssey")
     buf.seek(0)
-    r3 = client.post("/api/saves/ryujinx/upload-full", files={"file": ("x.zip", buf)})
+    r3 = client.post("/api/saves/switch/upload-full", files={"file": ("x.zip", buf)})
     check("unknown container refused", r3.status_code == 400 and "launch the game" in r3.text)
 
     # normalized members are refused on the wrong system
@@ -358,20 +358,29 @@ def test_ryujinx():
 
 
 def test_eden():
-    print("Eden (Switch)")
-    g = games("switch")
+    print("Eden (before Ryujinx): read only")
+    g = games("eden")
     keys = {x["key"] for x in g["games"]}
     check("Eden save listed", "0100152000022000" in keys, str(keys))
-    r = client.get("/api/games/switch/download", params={"key": "0100152000022000"})
+    r = client.get("/api/games/eden/download", params={"key": "0100152000022000"})
     names = sorted(zipfile.ZipFile(io.BytesIO(r.content)).namelist())
     check("account and device saves kept apart",
           names == ["switch-title/0100152000022000/1/account.sav",
                     "switch-title/0100152000022000/3/device.sav"], str(names))
 
     eden = HOME / ".var/app/dev.eden_emu.eden/data/eden/nand/user/save/0000000000000000"
+    before = (eden / ("0" * 32) / "0100152000022000/device.sav").read_bytes()
+    entry = g["games"][0]["entries"][0]["id"]
+    for refused in (client.post("/api/saves/eden/upload-full", files={"file": ("mk8.zip", io.BytesIO(r.content))}),
+                    client.delete("/api/saves/eden", params={"id": entry})):
+        check("Eden refuses a write", refused.status_code == 403, refused.text)
+    check("Eden's files untouched", (eden / ("0" * 32) / "0100152000022000/device.sav").read_bytes() == before)
+
+    # The yuzu-layout restore still serves a legacy base (local_bases.json).
+    catalog.CATALOG["eden"]["readonly"] = False
     (eden / ("0" * 31 + "1") / "0100152000022000/account.sav").write_bytes(b"broken")
     (eden / ("0" * 32) / "0100152000022000/device.sav").write_bytes(b"broken")
-    r2 = client.post("/api/saves/switch/upload-full",
+    r2 = client.post("/api/saves/eden/upload-full",
                      files={"file": ("mk8.zip", io.BytesIO(r.content))})
     check("Eden restore ok", r2.status_code == 200, r2.text)
     check("account save back in the account",
@@ -386,10 +395,11 @@ def test_eden():
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("switch-title/01006F8002326000/2/main.dat", b"island")
     buf.seek(0)
-    r3 = client.post("/api/saves/switch/upload-full", files={"file": ("acnh.zip", buf)})
+    r3 = client.post("/api/saves/eden/upload-full", files={"file": ("acnh.zip", buf)})
     check("Bcat save restored ok", r3.status_code == 200, r3.text)
     check("Bcat save lands under the null user",
           (eden / ("0" * 32) / "01006F8002326000/main.dat").read_bytes() == b"island")
+    catalog.CATALOG["eden"]["readonly"] = True
 
 
 def test_xenia():

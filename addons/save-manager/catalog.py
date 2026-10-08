@@ -135,7 +135,8 @@ CATALOG = {
         HOME / ".var/app/info.cemu.Cemu/data/Cemu", HOME / ".local/share/Cemu"], "collections": [
         C("mlc01/usr/save", "dirs", "save", (), "wiiu", glob="*/*"),
     ]},
-    "ryujinx": {"label": "Switch (Ryujinx)", "bases": [
+    # Ryujinx, the core's `switch` pack (its `ryujinx` pack shares it).
+    "switch": {"label": "Nintendo Switch", "bases": [
         HOME / ".var/app/io.github.ryubing.Ryujinx/config/Ryujinx",
         HOME / ".config/Ryujinx"], "collections": [
         # Ryujinx layout: install-specific save ids, identified via ExtraData /
@@ -147,9 +148,10 @@ CATALOG = {
         C("nand/user/save", "dirs", "save", (), "switch", glob="0000000000000000/*/*"),
         C("nand/user/save/cache", "dirs", "save", (), "shared"),
     ]},
-    # Eden (the core's `switch` pack): yuzu layout, one folder per title under
-    # each account; the all-zero account holds device saves.
-    "switch": {"label": "Nintendo Switch", "bases": [
+    # Eden ran the Switch before Ryujinx came back. Its saves stay readable
+    # (download, look) and are never written: the core copies them into
+    # Ryujinx, and a write here would fork the two.
+    "eden": {"label": "Eden (before Ryujinx)", "readonly": True, "bases": [
         HOME / ".var/app/dev.eden_emu.eden/data/eden",
         HOME / ".local/share/eden"], "collections": [
         C("nand/user/save", "dirs", "save", (), "switch", glob="0000000000000000/*/*"),

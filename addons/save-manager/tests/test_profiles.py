@@ -69,11 +69,24 @@ def sha(path: Path) -> str:
 
 RPCS3 = HOME / ".config/rpcs3"
 EDEN = HOME / ".var/app/dev.eden_emu.eden/data/eden"
+RYU = HOME / ".var/app/io.github.ryubing.Ryujinx/config/Ryujinx"
+# Eden left the core: its profile folders stay as the Eden-era pack laid them.
+EDEN_ERA = {"eden"}
 CEMU = HOME / ".var/app/info.cemu.Cemu/data/Cemu"
 PCSX2 = HOME / ".config/PCSX2"
 DUCK = HOME / ".local/share/duckstation"
 MK8 = "0100152000022000"
 USER = "0" * 31 + "1"
+BOTW = "01007EF00011E000"
+
+
+def ryujinx_save(folder: Path, title: str, data: bytes) -> None:
+    """A Ryujinx container: data in 0/, the title in ExtraData0 (ryujinx.py)."""
+    write(folder / "0/save.bin", data)
+    extra = bytearray(0x200)
+    extra[0:8] = int(title, 16).to_bytes(8, "little")
+    extra[0x20] = 1
+    write(folder / "ExtraData0", bytes(extra))
 
 
 def build_tree():
@@ -86,6 +99,7 @@ def build_tree():
     write(GCD / "emu/melonds/Pokemon Platinum.sav.2", b"player2" * 64)
     write(RPCS3 / "dev_hdd0/home/00000001/savedata/BLES01234-SAVE01/SAVE.DAT", b"owner-ps3" * 64)
     write(EDEN / f"nand/user/save/0000000000000000/{USER}/{MK8}/save.bin", b"owner-mk8" * 64)
+    ryujinx_save(RYU / "bis/user/save/0000000000000001", MK8, b"owner-ryu-mk8" * 64)
     write(CEMU / "mlc01/usr/save/00050000/10101c00/user/save.dat", b"owner-wiiu" * 64)
     two_games = mc.import_save(cards.blank_ps2(), cards.make_psu()[0], "a.psu")
     two_games = mc.import_save(two_games, cards.make_psu(name="BESLES-99999OTHER", title="OTHER")[0], "b.psu")
@@ -106,6 +120,7 @@ def build_tree():
     write(SAM_DIR / "gopher64/sram/ZELDA MAJORA-0123456789ABCDEF.fla", b"sam-n64" * 64)
     write(SAM_DIR / "rpcs3/savedata/BLUS55555-SLOT0/SAVE.DAT", b"sam-ps3" * 64)
     write(SAM_DIR / f"switch/save/0000000000000000/{USER}/01006F8002326000/main.dat", b"sam-acnh" * 64)
+    ryujinx_save(SAM_DIR / "switch/user-save/0000000000000001", BOTW, b"sam-botw" * 64)
     write(SAM_DIR / "cemu/save/10102000/user/save.dat", b"sam-wiiu" * 64)
     write(SAM_DIR / "ppsspp/SAVEDATA/ULUS10041DATA/DATA.BIN", b"sam-psp" * 64)
     write(SAM_DIR / "duckstation/savestates/SLES-12345_1.sav", b"sam-ps1" * 64)
@@ -139,6 +154,8 @@ def _related(a: str, b: str) -> bool:
 def check_layout(packs: dict, source: str):
     print(f"LAYOUT against {source}")
     for emu, lay in profiles.LAYOUT.items():
+        if emu in EDEN_ERA:
+            continue
         spec = packs.get(lay["system"], {}).get("profileSaves")
         check(f"{emu}: the core separates {lay['system']}", spec is not None, str(spec))
         if lay["system"] == "melonds":
@@ -165,6 +182,11 @@ def check_layout(packs: dict, source: str):
         if isinstance(spec, dict) and spec.get("supported") is False:
             check(f"{pid}: shared in the core, shared here",
                   all(lay["system"] != pid for lay in profiles.LAYOUT.values()))
+    for emu in EDEN_ERA:
+        lay = profiles.LAYOUT[emu]
+        check(f"{emu}: its folder names clash with no current one",
+              not set(lay["dirs"].values()) & {n for e, l in profiles.LAYOUT.items() if e not in EDEN_ERA
+                                               and l["system"] == lay["system"] for n in l["dirs"].values()})
     for emu, owner in (("gb", "gba"), ("gbc", "gba"), ("dolphin", "gamecube")):
         check(f"{emu} shares {owner}'s folder", profiles.LAYOUT[emu]["system"] == owner)
 
@@ -189,7 +211,7 @@ def test_profile_views():
     check("profiles listed for the page", [p["id"] for p in r.json()] == [OWNER["id"], SAM["id"]])
     expect = {
         "gb": "Tetris", "gba": "Golden Sun", "melonds": "Pokemon Platinum",
-        "gopher64": "ZELDA MAJORA", "rpcs3": "BLUS55555", "switch": "01006F8002326000",
+        "gopher64": "ZELDA MAJORA", "rpcs3": "BLUS55555", "switch": BOTW, "eden": "01006F8002326000",
         "cemu": "00050000/10102000", "ppsspp": "ULUS10041", "duckstation": "SLES-12345",
         "azahar": "00040000/00055d00", "shadps4": "CUSA01234",
     }
@@ -266,11 +288,20 @@ def test_swap_guard():
           client.delete("/api/saves/cemu", params={"id": "0/00050000/10101c00"}).status_code == 409)
     unswap(wiiu)
 
-    # Eden: the whole nand/user/save.
+    # Ryujinx: bis/user/save (and its index) while Sam plays.
+    save = RYU / "bis/user/save"
+    swap(save, SAM_DIR / "switch/user-save")
+    check("Ryujinx: owner's MK8 from the parked folder", keys(games("switch")) == {MK8})
+    check("Ryujinx: Sam's BOTW still Sam's", keys(games("switch", SAM)) == {BOTW})
+    check("Ryujinx: refused while Sam plays", client.delete(
+        "/api/saves/switch", params={"id": "0/0000000000000001"}).status_code == 409)
+    unswap(save)
+
+    # Eden: a swap an Eden-era crash left behind.
     save = EDEN / "nand/user/save"
     swap(save, SAM_DIR / "switch/save")
-    check("Eden: owner's MK8 from the parked folder", keys(games("switch")) == {MK8})
-    check("Eden: Sam's island still Sam's", "01006F8002326000" in keys(games("switch", SAM)))
+    check("Eden: owner's MK8 from the parked folder", keys(games("eden")) == {MK8})
+    check("Eden: Sam's island still Sam's", "01006F8002326000" in keys(games("eden", SAM)))
     unswap(save)
 
     # `keys` emulators: the core records the options it changed.
@@ -306,8 +337,10 @@ def test_copy():
           (RPCS3 / "dev_hdd0/home/00000001/savedata/BLUS55555-SLOT0/SAVE.DAT").read_bytes()
           == b"sam-ps3" * 64, r.text)
     r = copy("switch", MK8, OWNER, SAM)
-    check("Eden: owner → Sam lands in Sam's tree", r.status_code == 200 and
-          (SAM_DIR / f"switch/save/0000000000000000/{USER}/{MK8}/save.bin").is_file(), r.text)
+    check("Ryujinx: no copy between profiles (folders numbered per index)", r.status_code == 400, r.text)
+    r = copy("eden", MK8, OWNER, SAM)
+    check("Eden: read only, nothing copied", r.status_code == 403 and
+          not (SAM_DIR / f"switch/save/0000000000000000/{USER}/{MK8}").exists(), r.text)
     r = copy("cemu", "00050000/10101c00", OWNER, SAM)
     check("Cemu: owner → Sam lands in Sam's save folder", r.status_code == 200 and
           (SAM_DIR / "cemu/save/10101c00/user/save.dat").is_file(), r.text)
@@ -356,12 +389,16 @@ def test_full_backup():
     r = client.get("/api/saves/rpcs3/download-all", params={"profile": SAM["id"]})
     names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
     check("Sam's own backup uses plain names", all(n.startswith("dev_hdd0/") for n in names), str(names))
+    r = client.get("/api/saves/eden/download-all", params={"profile": SAM["id"]})
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    check("Sam's Eden backup stays normalized",
+          "switch-title/01006F8002326000/1/main.dat" in names, str(names))
+    r2 = client.post("/api/saves/eden/upload-full", params={"profile": SAM["id"]},
+                     files={"file": ("sw.zip", io.BytesIO(r.content))})
+    check("but Eden takes no restore", r2.status_code == 403, r2.text)
     r = client.get("/api/saves/switch/download-all", params={"profile": SAM["id"]})
     names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
-    check("Sam's Switch backup stays normalized", f"switch-title/{MK8}/1/save.bin" in names, str(names))
-    r2 = client.post("/api/saves/switch/upload-full", params={"profile": SAM["id"]},
-                     files={"file": ("sw.zip", io.BytesIO(r.content))})
-    check("and restores into Sam's tree", r2.status_code == 200, r2.text)
+    check("Sam's Ryujinx backup is normalized", f"switch-title/{BOTW}/1/save.bin" in names, str(names))
 
 
 # ── a box without profiles ───────────────────────────────────────────────────

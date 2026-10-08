@@ -126,7 +126,7 @@ function fileIcon(e) {
 }
 
 function fileHTML(e) {
-  const ro = !!data.playing;
+  const ro = !!data.playing || !!data.readonly;
   const meta = e.in_card ? `${e.sizeHuman}, inside ${esc(e.in_card)}`
     : `${e.sizeHuman}${e.is_dir ? ', a folder, downloads as .zip' : ''}`;
   let actions;
@@ -181,7 +181,7 @@ function gameHTML(g) {
 
 // "Copy to": every other profile, inside an opened game.
 function copyHTML(g) {
-  if (people.length < 2 || data.playing) return '';
+  if (people.length < 2 || data.playing || data.readonly) return '';
   const from = who || owner().id;
   const to = people.filter(p => p.id !== from);
   return `<div class="copy-row"><span>Copy this game's saves to</span>${to.map(p =>
@@ -196,7 +196,7 @@ function render() {
     return seen.has(k) ? false : (seen.add(k), true);
   });
   const hasAny = data.games.length || data.other.length;
-  const ro = !!data.playing;
+  const ro = !!data.playing || !!data.readonly;
   const whose = who && !data.shared ? `${nameOf(who)}'s saves, ` : '';
   let html = `
     <header class="page-head">
@@ -216,7 +216,10 @@ function render() {
       <p><button class="btn" onclick="selectPerson('${attr(owner().id)}')">Show ${esc(owner().name)}'s saves</button></p></section></div>`;
     return;
   }
-  if (ro) {
+  if (data.readonly) {
+    html += `<p class="note">These are the saves Eden kept before the Switch went back to Ryujinx.
+      GameCore copied them into Ryujinx; here they can be looked at and downloaded, not changed.</p>`;
+  } else if (ro) {
     html += `<p class="note warn">${I('alert')}<span><b>${esc(data.playing)}</b><br>
       Until then the saves can be looked at and downloaded, not changed. If no game is running, start and quit one game of this system.</span></p>`;
   }

@@ -17,9 +17,9 @@ from fastapi import HTTPException
 import ryujinx as ryu
 from backups import backup as _backup
 
-# Normalized zip prefix → the systems that restore it. Ryujinx and Eden share
+# Normalized zip prefix → the systems that read it. Ryujinx and Eden share
 # one format so a save moves between them.
-NORM_TAGS = {"switch-title": ("ryujinx", "switch"), "x360-title": ("xenia",),
+NORM_TAGS = {"switch-title": ("switch", "eden"), "x360-title": ("xenia",),
              "ps4-title": ("shadps4",)}
 # yuzu layout: device saves sit under the all-zero account. A Ryujinx Bcat
 # container (type 2) holding game data goes there too: Eden has no Bcat saves,

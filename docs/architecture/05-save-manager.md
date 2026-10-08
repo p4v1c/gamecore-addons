@@ -214,8 +214,8 @@ profile shares it, like Dolphin's states), `keeps(cdir, rel)` filters what is
 not this profile's, `path(ci, rel)` finds an entry, `at(rel)` a folder. An
 entry has the same id in every view, so a copy maps it straight across.
 
-**The swap.** For an emulator with no save option (`dirs` in the pack: Eden,
-RPCS3, PPSSPP, Cemu, shadPS4, Ryujinx), the core renames the owner's folder
+**The swap.** For an emulator with no save option (`dirs` in the pack:
+Ryujinx, RPCS3, PPSSPP, Cemu, shadPS4), the core renames the owner's folder
 `<name>.gamecore-primary` and links the profile's folder in its place for the
 length of a game; after a crash it stays until the next launch.
 `profiles.holder(emu_id, base)` sees it (a link into `profile-saves`), and
@@ -233,7 +233,14 @@ replace. A game inside a shared PS1/PS2/GC card is exported from the source
 card and imported into the destination's own card (replacing its old copy);
 no card there is a refusal, not a new card. Collections the destination
 shares (states of Dolphin, RPCS3, Azahar) and melonDS players 2-4 are left
-out. Ryujinx is refused: its folders are numbered per profile index.
+out. Ryujinx (`switch`) is refused: its folders are numbered per profile index.
+
+**Eden, read only.** `catalog.CATALOG["eden"]` carries `"readonly": True`:
+`_view(..., write=True)` answers 403 before anything else, so every write
+route refuses it. Its `LAYOUT` entry keeps the Eden-era folder
+(`<profile>/switch/save`), which the core reads when it copies a profile's
+saves into Ryujinx (`user-save`, `save-index`); the tests check the two never
+share a name (`EDEN_ERA`).
 
 ## Restore safety
 

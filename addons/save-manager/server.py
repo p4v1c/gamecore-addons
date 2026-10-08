@@ -72,6 +72,8 @@ def _view(emu_id: str, profile: str | None = None, write: bool = False) -> View:
     base = resolve_base(emu_id)
     if not base:
         raise HTTPException(404, "no data directory for this emulator on the box")
+    if write and meta.get("readonly"):
+        raise HTTPException(403, f"{meta['label']} saves are read only.")
     if write and (busy := profiles.playing_message(emu_id, base)):
         raise HTTPException(409, busy)
     person = _person(profile)
@@ -276,6 +278,7 @@ def list_games(emu_id: str, profile: str | None = None):
         "folder": str(view.folder) if view and view.folder else None,
         "shared": shared,
         "playing": profiles.playing_message(emu_id, base),
+        "readonly": bool(CATALOG[emu_id].get("readonly")),
         "collections": [{"index": i, "kind": c["kind"], "mode": c["mode"],
                          "hint": _MODE_HINT.get(c["mode"], "")}
                         for i, c in enumerate(cols) if not shared and (view is None or view.sources(i))],
@@ -651,7 +654,7 @@ def copy_game(emu_id: str, key: str, source: str, target: str):
     """Copy one game's saves from one profile to another (ids from
     /api/profiles, the primary's included). What it overwrites is backed up
     first and listed under the destination's backups; the source is only read."""
-    if emu_id == "ryujinx":     # folders numbered per profile index: a copy could hit another game
+    if emu_id == "switch":      # folders numbered per profile index: a copy could hit another game
         raise HTTPException(400, "Ryujinx saves can't be copied between profiles.")
     src, dest = _view(emu_id, source, write=True), _view(emu_id, target, write=True)
     if (src.profile or {}).get("id") == (dest.profile or {}).get("id"):

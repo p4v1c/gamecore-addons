@@ -423,17 +423,7 @@
   }
  },
  "ryujinx": {
-  "profileSaves": {
-   "dirs": [
-    {
-     "config": "bis/user/save"
-    },
-    {
-     "as": "save-index",
-     "config": "bis/system/save/8000000000000000"
-    }
-   ]
-  }
+  "sharesEmulator": "switch"
  },
  "saturn": {
   "profileSaves": {
@@ -544,7 +534,12 @@
   "profileSaves": {
    "dirs": [
     {
-     "path": "@FLATPAK_DATA@/eden/nand/user/save"
+     "as": "user-save",
+     "config": "bis/user/save"
+    },
+    {
+     "as": "save-index",
+     "config": "bis/system/save/8000000000000000"
     }
    ]
   }

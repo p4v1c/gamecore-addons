@@ -145,7 +145,7 @@ GUIDE = {
         "notes": ["Some games keep progress in extdata (sdmc\\…\\extdata\\…) — bring it too; it shows "
                   "under Shared & system files."],
     },
-    "ryujinx": {
+    "switch": {
         "pc": [
             {"os": "Windows", "path": "%AppData%\\Ryujinx\\bis\\user\\save",
              "note": "portable mode: portable\\bis\\user\\save next to the exe"},
@@ -192,8 +192,8 @@ GUIDE = {
     },
 }
 
-# The Switch guide covers both layouts; the switch-title zips restore into either.
-GUIDE["switch"] = GUIDE["ryujinx"]
+# Eden's saves download in the same switch-title format.
+GUIDE["eden"] = GUIDE["switch"]
 
 # One emulator, one guide: GameCore files mGBA's games under gb, gbc and gba.
 GUIDE.update({sid: GUIDE["mgba"] for sid in ("gb", "gbc", "gba")})

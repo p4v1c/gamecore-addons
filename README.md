@@ -105,6 +105,7 @@ version to edit.
 | [rom-manager](addons/rom-manager) | web | 8770 | Upload ROMs from the browser (drag & drop per system), and manage each system's bezels |
 | [rpcs3-manager](addons/rpcs3-manager) | web | 8771 | Configure PS3 games remotely — per-game config & patches, RPCS3-style |
 | [save-manager](addons/save-manager) | web | 8772 | Back up / restore / delete emulator saves & save states (all systems), incl. inside PS1/PS2 memory cards, per GameCore profile |
+| [bios-manager](addons/bios-manager) | web | 8773 | Drop BIOS, firmware and keys (files, folders, zips): each is recognised and filed where its emulator reads it, with what each system still lacks |
 
 Ports 8770–8799 are reserved for addons; each addon declares its own in `addon.json`.
 

@@ -95,6 +95,7 @@ Only `web` addons get a link.
 | rom-manager | 8770 | `/roms` |
 | rpcs3-manager | 8771 | `/rpcs3` |
 | save-manager | 8772 | `/saves` |
+| bios-manager | 8773 | `/bios` |
 | _template | 8799 | — |
 
 > The port appears **twice**: in `addon.json` and as `PORT=` in `install.sh`

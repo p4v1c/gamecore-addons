@@ -164,6 +164,13 @@ def test_bios_archive_named_by_the_core_is_placed_whole(client):
     assert r["outcome"] == "placed" and (RA / "dc/naomi.zip").read_bytes() == naomi
 
 
+def test_ps4_module_is_placed_but_a_ps3_firmware_piece_is_not(client):
+    r = by_file(upload(client, {"libSceNgs2.sprx": b"ps4", "liblv2.sprx": b"ps3"}))
+    assert r["libSceNgs2.sprx"]["outcome"] == "placed"
+    assert (HOME / ".var/app/net.shadps4.shadPS4/data/shadPS4/sys_modules/libSceNgs2.sprx").read_bytes() == b"ps4"
+    assert r["liblv2.sprx"]["outcome"] == "ignored"
+
+
 def test_ps1_bios_by_content_keeps_its_name_and_pinned_ps2_note(client):
     ps1 = b"Sony Computer Entertainment Inc".ljust(512 * 1024, b"\0")
     ps2 = (b"RESET" + b"ROMVER").ljust(4 << 20, b"\0")

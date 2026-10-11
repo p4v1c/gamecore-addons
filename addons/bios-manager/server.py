@@ -52,8 +52,12 @@ def get_status():
 def _process(uploads: list[tuple[str, Path]], work: Path) -> list[dict]:
     core = core_rows()
     systems_by_id = {s["id"]: s for s in systems()}
+    # Files known by name only: MAME sets, shadPS4 modules. RPCS3's .sprx are
+    # the installed firmware's own pieces, put there by its installer, not by us.
     declared_zips = {f["file"]: sid for sid, row in (core or {}).items()
-                     for f in row.get("files", []) if f.get("file", "").endswith(".zip")}
+                     for f in row.get("files", [])
+                     if f.get("file", "").endswith(".zip")
+                     or (f.get("file", "").endswith(".sprx") and sid != "rpcs3")}
     try:
         found, ignored = recognise(uploads, work, declared_zips)
     except ValueError as e:

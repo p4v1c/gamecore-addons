@@ -148,7 +148,7 @@ def identify(rel: str, path: Path, md5: str, size: int, declared_zips: dict[str,
         return _hit("switch", [], "name", "Switch firmware piece (.nca)", kind="nca")
     for zip_name, system in declared_zips.items():
         if name.lower() == PurePosixPath(zip_name).name.lower():
-            return _hit(system, [zip_name], "name", f"BIOS archive {zip_name}")
+            return _hit(system, [zip_name], "name", f"Declared file {zip_name}")
     if size <= TEXT_MAX and b"\0" not in head:
         try:
             hit = _by_text(path.read_text(encoding="utf-8-sig"))

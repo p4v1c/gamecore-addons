@@ -43,6 +43,7 @@ SYSTEMS = [
     {"id": "wii", "label": "Wii", "path": "flatpak"},
     {"id": "gba", "label": "Game Boy Advance", "path": "/usr/bin/mgba-qt"},
     {"id": "naomi", "label": "Naomi", "path": "/usr/bin/retroarch"},
+    {"id": "shadps4", "label": "PlayStation 4", "path": "flatpak"},
     {"id": "lutris", "label": "PC", "path": "/usr/bin/python3"},
 ]
 
@@ -64,6 +65,7 @@ def core_report() -> dict:
         _row("pcsx2", PCSX2_BIOS, [("ps2-0150e-20001228.bin", True)]),
         _row("rpcs3", HOME / ".var/app/net.rpcs3.RPCS3/config/rpcs3/dev_flash/sys/external", [("liblv2.sprx", True)]),
         _row("naomi", RA, [("dc/naomi.zip", False)]),
+        _row("shadps4", HOME / ".var/app/net.shadps4.shadPS4/data/shadPS4", [("sys_modules/libSceNgs2.sprx", False)]),
         _row("cemu", HOME / ".var/app/info.cemu.Cemu/data/Cemu", [("keys.txt", False)]),
     ]
     return {r["id"]: r for r in rows}

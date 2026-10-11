@@ -1,0 +1,859 @@
+{
+ "source": "libretro-database dat/System.dat",
+ "files": {
+  "85254fbe320ca82a768ec2c26bb08def": {
+   "system": "atomiswave",
+   "size": 42296,
+   "names": [
+    "dc/awbios.zip"
+   ]
+  },
+  "e10c53c2f8b90bab96ead2d368858623": {
+   "system": "dreamcast",
+   "size": 2097152,
+   "names": [
+    "dc/dc_boot.bin"
+   ]
+  },
+  "0a93f7940c455905bea6e392dfde92a4": {
+   "system": "dreamcast",
+   "size": 131072,
+   "names": [
+    "dc/dc_flash.bin"
+   ]
+  },
+  "81bbe60ba7a3d1cea1d48c14cbcc647b": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "ps1_rom.bin"
+   ]
+  },
+  "c53ca5908936d412331790f4426c6c33": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "psxonpsp660.bin"
+   ]
+  },
+  "8abc1b549a4a80954addc48ef02c4521": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph100.bin"
+   ]
+  },
+  "239665b1a3dade1b5a52c06338011044": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph1000.bin"
+   ]
+  },
+  "924e392ed05558ffdb115408c263dccf": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph1001.bin"
+   ]
+  },
+  "54847e693405ffeb0359c6287434cbef": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph1002.bin"
+   ]
+  },
+  "6e3735ff4c7dc899ee98981385f6f3d0": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph101.bin"
+   ]
+  },
+  "b10f5e0e3d9eb60e5159690680b1e774": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph102A.bin"
+   ]
+  },
+  "de93caec13d1a141a40a79f5c86168d6": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph102B.bin",
+    "scph102C.bin"
+   ]
+  },
+  "849515939161e62f6b866f6853006780": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph3000.bin"
+   ]
+  },
+  "cba733ceeff5aef5c32254f1d617fa62": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph3500.bin"
+   ]
+  },
+  "eb201d2d98251a598af467d4347bb62f": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph5000.bin"
+   ]
+  },
+  "8dd7d5296a650fac7319bce665a6a53c": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph5500.bin"
+   ]
+  },
+  "490f666e1afb15b7362b406ed1cea246": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph5501.bin",
+    "scph7003.bin"
+   ]
+  },
+  "32736f17079d0b2b7024407c39bd3050": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph5502.bin",
+    "scph5552.bin"
+   ]
+  },
+  "1e68c231d0896b7eadcad1d7d8e76129": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph7001.bin"
+   ]
+  },
+  "b9d9a0286c33dc6b7237bb13cd46fdee": {
+   "system": "duckstation",
+   "size": 524288,
+   "names": [
+    "scph7002.bin",
+    "scph7502.bin",
+    "scph9002(7502).bin"
+   ]
+  },
+  "ca30b50f880eb660a320674ed365ef7a": {
+   "system": "fds",
+   "size": 8192,
+   "names": [
+    "disksys.rom"
+   ]
+  },
+  "db92574caab77a7ec99d4605fd6f2450": {
+   "system": "gamecube",
+   "size": 2097152,
+   "names": [
+    "GC/EUR/IPL.bin"
+   ]
+  },
+  "b17148254a5799684c7d783206504926": {
+   "system": "gamecube",
+   "size": 2097152,
+   "names": [
+    "GC/JAP/IPL.bin",
+    "GC/USA/IPL.bin"
+   ]
+  },
+  "32fbbd84168d3482956eb3c5051637f5": {
+   "system": "gb",
+   "size": 256,
+   "names": [
+    "gb_bios.bin"
+   ]
+  },
+  "e0430bca9925fb9882148fd2dc2418c1": {
+   "system": "gb",
+   "size": 256,
+   "names": [
+    "sgb_bios.bin"
+   ]
+  },
+  "d574d4f9c12f305074798f54c091a8b4": {
+   "system": "gb",
+   "size": 256,
+   "names": [
+    "sgb_bios.bin"
+   ]
+  },
+  "a860e8c0b6d573d191e4ec7db1b1e4f6": {
+   "system": "gba",
+   "size": 16384,
+   "names": [
+    "gba_bios.bin"
+   ]
+  },
+  "dbfce9db9deaa2567f6a84fde55f9680": {
+   "system": "gbc",
+   "size": 2304,
+   "names": [
+    "gbc_bios.bin"
+   ]
+  },
+  "e66fa1dc5820d254611fdcdba0662372": {
+   "system": "megacd",
+   "size": 131072,
+   "names": [
+    "bios_CD_E.bin"
+   ]
+  },
+  "278a9397d192149e84e820ac621a8edd": {
+   "system": "megacd",
+   "size": 131072,
+   "names": [
+    "bios_CD_J.bin"
+   ]
+  },
+  "2efd74e3232ff260e371b99f84024f7f": {
+   "system": "megacd",
+   "size": 131072,
+   "names": [
+    "bios_CD_U.bin"
+   ]
+  },
+  "df692a80a5b1bc90728bc3dfc76cd948": {
+   "system": "melonds",
+   "size": 16384,
+   "names": [
+    "bios7.bin"
+   ]
+  },
+  "a392174eb3e572fed6447e956bde4b25": {
+   "system": "melonds",
+   "size": 4096,
+   "names": [
+    "bios9.bin"
+   ]
+  },
+  "559dae4ea78eb9d67702c56c1d791e81": {
+   "system": "melonds",
+   "size": 65536,
+   "names": [
+    "dsi_bios7.bin"
+   ]
+  },
+  "87b665fce118f76251271c3732532777": {
+   "system": "melonds",
+   "size": 65536,
+   "names": [
+    "dsi_bios9.bin"
+   ]
+  },
+  "e45033d9b0fa6b0de071292bba7c9d13": {
+   "system": "melonds",
+   "size": 262144,
+   "names": [
+    "firmware.bin"
+   ]
+  },
+  "7a11bfe0cc72886d032e386db68f890c": {
+   "system": "naomi",
+   "size": 715730,
+   "names": [
+    "dc/airlbios.zip"
+   ]
+  },
+  "547f3d12aed389058ca06148f1cca0ed": {
+   "system": "naomi",
+   "size": 1394278,
+   "names": [
+    "dc/f355bios.zip"
+   ]
+  },
+  "1028615bcac4c31634a3364ce5c04044": {
+   "system": "naomi",
+   "size": 2328436,
+   "names": [
+    "dc/f355dlx.zip"
+   ]
+  },
+  "f4011d3116500354edf7302a90402711": {
+   "system": "naomi",
+   "size": 1479106,
+   "names": [
+    "dc/hod2bios.zip"
+   ]
+  },
+  "526eda1e2a7920c92c88178789d71d84": {
+   "system": "naomi",
+   "size": 9321533,
+   "names": [
+    "dc/naomi.zip"
+   ]
+  },
+  "6d2cb14fc3e1f65ceb135633d1694122": {
+   "system": "pcenginecd",
+   "size": 32768,
+   "names": [
+    "gecard.pce",
+    "gexpress.pce"
+   ]
+  },
+  "2b7ccb3d86baa18f6402c176f3065082": {
+   "system": "pcenginecd",
+   "size": 262144,
+   "names": [
+    "syscard1.pce"
+   ]
+  },
+  "3cdd6614a918616bfc41c862e889dd79": {
+   "system": "pcenginecd",
+   "size": 262144,
+   "names": [
+    "syscard2.pce"
+   ]
+  },
+  "94279f315e8b52904f65ab3108542afe": {
+   "system": "pcenginecd",
+   "size": 262144,
+   "names": [
+    "syscard2u.pce"
+   ]
+  },
+  "38179df8f4ac870017db21ebcbf53114": {
+   "system": "pcenginecd",
+   "size": 262144,
+   "names": [
+    "syscard3.pce"
+   ]
+  },
+  "0754f903b52e3b3342202bdafb13efa5": {
+   "system": "pcenginecd",
+   "size": 262144,
+   "names": [
+    "syscard3u.pce"
+   ]
+  },
+  "acf4730ceb38ac9d8c7d8e21f2614600": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0100j-20000117.bin"
+   ]
+  },
+  "32f2e4d5ff5ee11072a6bc45530f5765": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0100jd-20000117.bin"
+   ]
+  },
+  "b1459d7446c69e3e97e6ace3ae23dd1c": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0101j-20000217.bin"
+   ]
+  },
+  "acf9968c8f596d2b15f42272082513d1": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0101jd-20000217.bin"
+   ]
+  },
+  "d3f1853a16c2ec18f3cd1ae655213308": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0101xd-20000224.bin"
+   ]
+  },
+  "a20c97c02210f16678ca3010127caf36": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0110a-20000727.bin"
+   ]
+  },
+  "63e6fd9b3c72e0d7b920e80cf76645cd": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0110ad-20000727.bin"
+   ]
+  },
+  "8db2fbbac7413bf3e7154c1e0715e565": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0120a-20000902.bin"
+   ]
+  },
+  "b7fa11e87d51752a98b38e3e691cbf17": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0120e-20000902.bin"
+   ]
+  },
+  "3016b3dd42148a67e2c048595ca4d7ce": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0120ed-20000902-20030110.bin"
+   ]
+  },
+  "91c87cb2f2eb6ce529a2360f80ce2457": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0120ed-20000902.bin"
+   ]
+  },
+  "f63bc530bd7ad7c026fcd6f7bd0d9525": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0120j-20001027-185015.bin"
+   ]
+  },
+  "cee06bd68c333fc5768244eae77e4495": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0120j-20001027-191435.bin"
+   ]
+  },
+  "8accc3c49ac45f5ae2c5db0adc854633": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0150a-20001228.bin"
+   ]
+  },
+  "0bf988e9c7aaa4c051805b0fa6eb3387": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0150ad-20001228-20030520.bin"
+   ]
+  },
+  "838544f12de9b0abc90811279ee223c8": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0150e-20001228.bin"
+   ]
+  },
+  "6f9a6feb749f0533aaae2cc45090b0ed": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0150ed-20001228-20030520.bin"
+   ]
+  },
+  "815ac991d8bc3b364696bead3457de7d": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0150j-20010118.bin"
+   ]
+  },
+  "bb6bbc850458fff08af30e969ffd0175": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0150jd-20010118.bin"
+   ]
+  },
+  "b107b5710042abe887c0f6175f6e94bb": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0160a-20010427.bin"
+   ]
+  },
+  "18bcaadb9ff74ed3add26cdf709fff2e": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0160a-20010704.bin"
+   ]
+  },
+  "7200a03d51cacc4c14fcdfdbc4898431": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0160a-20011004.bin"
+   ]
+  },
+  "d5ce2c7d119f563ce04bc04dbc3a323e": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0160a-20020207.bin"
+   ]
+  },
+  "491209dd815ceee9de02dbbc408c06d6": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0160e-20010704.bin"
+   ]
+  },
+  "8359638e857c8bc18c3c18ac17d9cc3c": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0160e-20011004.bin"
+   ]
+  },
+  "0d2228e6fd4fb639c9c39d077a9ec10c": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0160e-20020319.bin"
+   ]
+  },
+  "5b1f47fbeb277c6be2fccdd6344ff2fd": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0160e-20020426.bin"
+   ]
+  },
+  "352d2ff9b3f68be7e6fa7e6dd8389346": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0160h-20010730.bin"
+   ]
+  },
+  "315a4003535dfda689752cb25f24785c": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0160h-20020426.bin"
+   ]
+  },
+  "ab55cceea548303c22c72570cfd4dd71": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0160j-20010427.bin"
+   ]
+  },
+  "72da56fccb8fcd77bba16d1b6f479914": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0160j-20020426.bin"
+   ]
+  },
+  "8aa12ce243210128c5074552d3b86251": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0170a-20030325.bin"
+   ]
+  },
+  "eb960de68f0c0f7f9fa083e9f79d0360": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0170ad-20030325.bin"
+   ]
+  },
+  "6e69920fa6eef8522a1d688a11e41bc6": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0170e-20030227.bin"
+   ]
+  },
+  "666018ffec65c5c7e04796081295c6c7": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0170ed-20030227.bin"
+   ]
+  },
+  "312ad4816c232a9606e56f946bc0678a": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0170j-20030206.bin"
+   ]
+  },
+  "240d4c5ddd4b54069bdc4a3cd2faf99d": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0180cd-20030224.bin"
+   ]
+  },
+  "1c6cd089e6c83da618fbf2a081eb4888": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0180j-20031028.bin"
+   ]
+  },
+  "35461cecaa51712b300b2d6798825048": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0190a-20030623.bin"
+   ]
+  },
+  "81f4336c1de607dd0865011c0447052e": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0190a-20040329.bin"
+   ]
+  },
+  "1b6e631b536247756287b916f9396872": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0190c-20030623.bin"
+   ]
+  },
+  "bd6415094e1ce9e05daabe85de807666": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0190e-20030623.bin"
+   ]
+  },
+  "afde410bd026c16be605a1ae4bd651fd": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0190e-20030822.bin"
+   ]
+  },
+  "2e70ad008d4ec8549aada8002fdf42fb": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0190h-20030623.bin"
+   ]
+  },
+  "463d87789c555a4a7604e97d7db545d1": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0190j-20030623.bin"
+   ]
+  },
+  "00da1b177096cfd2532c8fa22b43e667": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0190j-20030822.bin"
+   ]
+  },
+  "b53d51edc7fc086685e31b811dc32aad": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0190r-20030623.bin"
+   ]
+  },
+  "d333558cc14561c1fdc334c75d5f37b7": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0200a-20040614.bin"
+   ]
+  },
+  "dc752f160044f2ed5fc1f4964db2a095": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0200e-20040614.bin"
+   ]
+  },
+  "63ead1d74893bf7f36880af81f68a82d": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0200ed-20040614.bin"
+   ]
+  },
+  "3e3e030c0f600442fa05b94f87a1e238": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0200h-20040614.bin"
+   ]
+  },
+  "0eee5d1c779aa50e94edd168b4ebf42e": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0200j-20040614.bin"
+   ]
+  },
+  "1ad977bb539fc9448a08ab276a836bbc": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0210j-20040917.bin"
+   ]
+  },
+  "929a14baca1776b00869f983aa6e14d2": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0220a-20050620.bin"
+   ]
+  },
+  "cb801b7920a7d536ba07b6534d2433ca": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0220a-20060210.bin"
+   ]
+  },
+  "40c11c063b3b9409aa5e4058e984e30c": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0220a-20060905.bin"
+   ]
+  },
+  "9959ad7a8685cad66206e7752ca23f8b": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0220ad-20050620.bin"
+   ]
+  },
+  "21fe4cad111f7dc0f9af29477057f88d": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0220ad-20060905.bin"
+   ]
+  },
+  "573f7d4a430c32b3cc0fd0c41e104bbd": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0220e-20050620.bin"
+   ]
+  },
+  "af60e6d1a939019d55e5b330d24b1c25": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0220e-20060210.bin"
+   ]
+  },
+  "80bbb237a6af9c611df43b16b930b683": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0220e-20060905.bin"
+   ]
+  },
+  "df63a604e8bff5b0599bd1a6c2721bd0": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0220h-20050620.bin"
+   ]
+  },
+  "549a66d0c698635ca9fa3ab012da7129": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0220h-20060210.bin"
+   ]
+  },
+  "c37bce95d32b2be480f87dd32704e664": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0220h-20060905.bin"
+   ]
+  },
+  "eb4f40fcf4911ede39c1bbfe91e7a89a": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0220j-20050620.bin"
+   ]
+  },
+  "5b1ba4bb914406fae75ab8e38901684d": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0220j-20060210.bin"
+   ]
+  },
+  "5de9d0d730ff1e7ad122806335332524": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0220j-20060905.bin"
+   ]
+  },
+  "21038400dc633070a78ad53090c53017": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0230a-20080220.bin"
+   ]
+  },
+  "dc69f0643a3030aaa4797501b483d6c4": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0230e-20080220.bin"
+   ]
+  },
+  "30d56e79d89fbddf10938fa67fe3f34e": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0230h-20080220.bin"
+   ]
+  },
+  "80ac46fa7e77b8ab4366e86948e54f83": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0230j-20080220.bin"
+   ]
+  },
+  "93ea3bcee4252627919175ff1b16a1d9": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0250e-20100415.bin"
+   ]
+  },
+  "d3e81e95db25f5a86a7b7474550a2155": {
+   "system": "pcsx2",
+   "size": 4194304,
+   "names": [
+    "ps2-0250j-20100415.bin"
+   ]
+  },
+  "af5828fdff51384f99b3c4926be27762": {
+   "system": "saturn",
+   "size": 524288,
+   "names": [
+    "kronos/saturn_bios.bin"
+   ]
+  }
+ }
+}

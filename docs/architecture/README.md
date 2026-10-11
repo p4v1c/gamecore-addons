@@ -21,6 +21,7 @@ Companion repo: [p4v1c/GamecoreRenew](https://github.com/p4v1c/GamecoreRenew)
 | 4 | [rpcs3-manager](04-rpcs3-manager.md) | Every route and function, and why `ryaml` exists |
 | 5 | [save-manager](05-save-manager.md) | The catalog, the memory-card codec, save identity, the archive format |
 | 6 | [Security & traps](06-security-and-traps.md) | The rules, the validation pattern, what will bite you |
+| 7 | [bios-manager](07-bios-manager.md) | How a file is recognised, where it goes, what needs the emulator |
 
 Looking for something specific:
 
@@ -28,6 +29,7 @@ Looking for something specific:
 - *"Why does my RPCS3 config get corrupted?"* → [4](04-rpcs3-manager.md#ryamlpy--string-preserving-yaml)
 - *"Where does the nav bar come from?"* → [2](02-lifecycle-and-registry.md#shared-components)
 - *"Can an addon read the core's database?"* → [1](01-addon-model.md#what-an-addon-may-and-may-not-do)
+- *"Where does an uploaded BIOS end up?"* → [7](07-bios-manager.md#where-a-file-goes)
 - *"What validates an uploaded zip?"* → [6](06-security-and-traps.md#the-path-validation-pattern)
 
 ## The picture
@@ -39,22 +41,25 @@ flowchart TB
         api1["GET /api/addons"]
         api2["GET /gc/addons — no auth"]
         api3["POST /api/addons/notify"]
+        api4["GET /api/bios"]
         ws["WebSocket → TV"]
     end
 
     cli["gamecore-addon CLI<br/>(ships with the core)"]
     cli -->|writes| reg
-    cli -->|runs install.sh| a1 & a2 & a3
+    cli -->|runs install.sh| a1 & a2 & a3 & a4
 
     subgraph addons["one process each, systemd --user"]
         a1["rom-manager :8770<br/>/roms"]
         a2["rpcs3-manager :8771<br/>/rpcs3"]
         a3["save-manager :8772<br/>/saves"]
+        a4["bios-manager :8773<br/>/bios"]
     end
 
     a1 & a2 & a3 -->|"tell the TV something changed"| api3 --> ws
-    a1 & a2 & a3 -->|"nav bar reads siblings"| api2
-    caddy["Caddy :8443 — TLS + auth"] --> a1 & a2 & a3
+    a1 & a2 & a3 & a4 -->|"nav bar reads siblings"| api2
+    a4 -->|"where BIOS files go"| api4
+    caddy["Caddy :8443 — TLS + auth"] --> a1 & a2 & a3 & a4
     lan["LAN browser"] --> caddy
 ```
 

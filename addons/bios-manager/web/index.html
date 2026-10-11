@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GameCore BIOS</title>
+<link rel="stylesheet" href="gamecore-ui.css">
+<link rel="stylesheet" href="gamecore-nav.css">
+<script src="gamecore-icons.js"></script>
+<script src="gamecore-nav.js" defer></script>
+<style>
+.state { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.state.ok { color: var(--ok); } .state.warn { color: var(--warn); } .state.bad { color: var(--danger); }
+.state.dim { color: var(--ink-3); font-weight: 400; }
+.path { font-family: var(--mono); font-size: 14px; color: var(--ink-3); word-break: break-all; margin-top: 2px; }
+.row-title.wrap { white-space: normal; overflow-wrap: anywhere; flex: 1; min-width: 0; }
+.row-head { display: flex; align-items: baseline; gap: 12px; }
+.rail-item .rail-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.rail-item .state { font-size: 14px; margin-top: 1px; }
+pre.command { white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+.action { font-size: 15px; color: var(--ink-2); margin-top: 6px; overflow-wrap: anywhere; }
+.drop.big { min-height: 120px; align-items: center; }
+.drop .icon { width: 28px; height: 28px; color: var(--accent-soft); }
+.progress { height: 6px; border-radius: 3px; background: var(--hover); overflow: hidden; margin-top: 16px; }
+.progress-fill { height: 100%; width: 0; background: var(--accent-soft); }
+.drag-overlay { position: fixed; inset: 0; z-index: 100; display: none; place-items: center;
+  background: rgba(9, 9, 15, 0.94); pointer-events: none; }
+.drag-overlay.visible { display: grid; }
+.drag-box { padding: 48px 32px; border: 2px dashed var(--accent-soft); border-radius: 20px;
+  font-size: 20px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="rail-head">
+      <div class="rail-title">BIOS</div>
+      <div class="rail-sub" id="rail-sub">Loading</div>
+    </div>
+    <nav class="rail-list" id="rail" aria-label="Systems"><div class="spinner"></div></nav>
+  </aside>
+  <main class="page" id="page"><div class="spinner"></div></main>
+</div>
+<div class="drag-overlay" id="drag"><div class="drag-box">Drop to sort the files</div></div>
+<div class="toasts" id="toasts" role="status"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+let systems = [], view = 'add', lastResults = null, busy = false, home = '';
+// Paths read better from the home folder; commands keep them absolute.
+const short = p => home && String(p).startsWith(home + '/') ? '~' + String(p).slice(home.length) : p;
+
+function toast(msg, isError) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (isError ? ' error' : '');
+  t.textContent = msg;
+  $('toasts').appendChild(t);
+  setTimeout(() => t.remove(), 6000);
+}
+
+function summary(s) {
+  if (s.missing_required) return {cls: 'bad', text: `${s.missing_required} required missing`};
+  if (s.staged.length) return {cls: 'warn', text: 'Waiting for the emulator'};
+  if (!s.files.length) return {cls: 'dim', text: s.note ? 'Nothing needed' : 'No list'};
+  if (s.missing) return {cls: 'dim', text: `${s.files.length - s.missing} of ${s.files.length} file${s.files.length > 1 ? "s" : ""}`};
+  return {cls: 'ok', text: 'All set'};
+}
+
+async function load() {
+  try {
+    const r = await fetch('api/status');
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    systems = data.systems;
+    home = data.home;
+    const req = systems.reduce((n, s) => n + s.missing_required, 0);
+    $('rail-sub').textContent = req ? `${req} required file${req > 1 ? 's' : ''} missing` : `${systems.length} systems`;
+    if (!data.core) toast('GameCore is not answering: part of the list is unknown.', true);
+  } catch (e) {
+    $('rail-sub').textContent = 'Could not load the systems';
+    toast(`Couldn't read the systems: ${e.message}`, true);
+  }
+  renderRail();
+  render();
+}
+
+function renderRail() {
+  const item = (id, name, state) => `<button class="rail-item" aria-current="${view === id}" data-show="${esc(id)}">
+      <span class="rail-text"><span class="rail-name">${esc(name)}</span>${state ? `<span class="state ${state.cls}">${esc(state.text)}</span>` : ''}</span></button>`;
+  $('rail').innerHTML = item('add', 'Add files') + systems.map(s => item(s.id, s.label, summary(s))).join('');
+}
+
+function show(id) { view = id; renderRail(); render(); }
+
+function render() {
+  if (view === 'add') return renderAdd();
+  const s = systems.find(x => x.id === view);
+  if (!s) return show('add');
+  const files = s.files.map(f => {
+    const st = f.status === 'ok' ? ['ok', 'Present'] : f.status === 'mismatch' ? ['warn', 'Different dump'] : f.required ? ['bad', 'Missing, required'] : ['dim', 'Missing'];
+    return `<div class="row"><div class="row-body">
+        <div class="row-head"><div class="row-title wrap">${esc(f.file)}</div><span class="state ${st[0]}">${st[1]}</span></div>
+        ${f.note ? `<div class="row-meta">${esc(f.note)}</div>` : ''}
+        ${f.path ? `<div class="path">${esc(short(f.path))}</div>` : ''}
+      </div></div>`;
+  }).join('');
+  const staged = s.staged.map(x => `<div class="row"><div class="row-body">
+        <div class="row-title wrap">${esc(x.name)}</div>
+        <div class="action">${esc(x.action)}</div>${x.command ? `<pre class="command">${esc(x.command)}</pre>` : ''}
+      </div><div class="row-actions"><button class="btn danger" data-drop="${esc(x.path)}">${gcIcon('trash', 'sm')}Remove</button></div></div>`).join('');
+  $('page').innerHTML = `
+    <header class="page-head"><div><h1 class="page-title">${esc(s.label)}</h1>
+      ${s.note ? `<div class="page-meta">${esc(s.note)}</div>` : ''}</div></header>
+    <div class="page-body">
+      ${staged ? `<section class="section"><div class="section-head"><h2 class="section-title">Waiting for the emulator</h2></div>
+        <p class="lede">These need the emulator to install them. Once it has, remove the copy kept here.</p>
+        <div class="list">${staged}</div></section>` : ''}
+      ${files ? `<section class="section"><div class="section-head"><h2 class="section-title">Files</h2></div><div class="list">${files}</div></section>` : ''}
+    </div>`;
+}
+
+const OUTCOME = {
+  placed: ['ok', 'Placed'], replaced: ['ok', 'Replaced'], same: ['dim', 'Already there'],
+  kept: ['warn', 'Kept the old one'], waiting: ['warn', 'Needs the emulator'], ignored: ['dim', 'Ignored'],
+};
+
+function renderAdd() {
+  const res = lastResults ? lastResults.map(r => {
+    const o = OUTCOME[r.outcome] || ['dim', r.outcome];
+    const what = [r.label && r.label !== r.file ? r.label : '', r.system].filter(Boolean).join(', ');
+    const detail = r.reason || r.note || (r.backup ? `The previous file is backed up at ${r.backup}` : '');
+    return `<div class="row"><div class="row-body">
+        <div class="row-head"><div class="row-title wrap">${esc(r.file)}</div><span class="state ${o[0]}">${o[1]}</span></div>
+        ${what ? `<div class="row-meta">${esc(what)}</div>` : ''}
+        ${r.dest ? `<div class="path">${esc(short(r.dest))}</div>` : ''}
+        ${detail ? `<div class="action">${esc(detail)}</div>` : ''}
+        ${r.action ? `<div class="action">${esc(r.action)}</div>` : ''}
+        ${r.command ? `<pre class="command">${esc(r.command)}</pre>` : ''}
+      </div></div>`;
+  }).join('') : '';
+  $('page').innerHTML = `
+    <header class="page-head"><div><h1 class="page-title">Add BIOS, firmware and keys</h1>
+      <div class="page-meta">Each file is recognised and put where its emulator reads it.</div></div></header>
+    <div class="page-body">
+      <p class="lede">Send loose files, a folder or a zip, mixed as you like. Readme files, pictures and anything
+        unrecognised are left out. A file already there is backed up before it is replaced. 7z and rar
+        archives are not read: repack them as zip.</p>
+      <div class="drops">
+        <label class="drop big">${gcIcon('upload')}<span><b>Files or zips</b>Pick or drop them here</span>
+          <input type="file" multiple onchange="send(this.files); this.value=''"></label>
+        <label class="drop big">${gcIcon('folder')}<span><b>A folder</b>Everything inside, subfolders too</span>
+          <input type="file" multiple webkitdirectory onchange="send(this.files); this.value=''"></label>
+      </div>
+      <div class="progress" id="progress" hidden><div class="progress-fill" id="progress-fill"></div></div>
+      ${lastResults ? `<section class="section"><div class="section-head"><h2 class="section-title">Last upload</h2>
+        <span class="section-count">${lastResults.length}</span></div><div class="list">${res}</div></section>` : ''}
+    </div>`;
+}
+
+function send(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length || busy) return;
+  busy = true;
+  const form = new FormData();
+  files.forEach(f => form.append('files', f, f.relPath || f.webkitRelativePath || f.name));
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', 'api/upload');
+  $('progress').hidden = false;
+  xhr.upload.onprogress = e => { if (e.lengthComputable) $('progress-fill').style.width = `${e.loaded / e.total * 100}%`; };
+  xhr.onload = () => {
+    busy = false;
+    let body = {};
+    try { body = JSON.parse(xhr.responseText); } catch (e) { /* keep the status code */ }
+    if (xhr.status !== 200) { $('progress').hidden = true; return toast(`Upload failed: ${body.detail || xhr.status}`, true); }
+    lastResults = body.results;
+    view = 'add';
+    load();
+  };
+  xhr.onerror = () => { busy = false; $('progress').hidden = true; toast("Couldn't reach the box. Check the network and retry.", true); };
+  xhr.send(form);
+}
+
+async function dropStaged(path) {
+  const r = await fetch(`api/staged?path=${encodeURIComponent(path)}`, {method: 'DELETE'});
+  if (!r.ok) { const b = await r.json().catch(() => ({})); return toast(`Couldn't remove it: ${b.detail || r.status}`, true); }
+  load();
+}
+
+// Dropped folders: webkitGetAsEntry() only works inside the drop event, so the
+// entries are taken there and walked afterwards.
+function walk(entry, prefix) {
+  if (entry.isFile) return new Promise(res => entry.file(f => { f.relPath = prefix + f.name; res([f]); }, () => res([])));
+  const reader = entry.createReader();
+  return new Promise(res => {
+    const all = [];
+    (function next() {
+      // readEntries hands out at most ~100 entries per call: drain it.
+      reader.readEntries(async batch => {
+        if (!batch.length) {
+          const nested = await Promise.all(all.map(e => walk(e, `${prefix}${entry.name}/`)));
+          return res(nested.flat());
+        }
+        all.push(...batch); next();
+      }, () => res([]));
+    })();
+  });
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-show], [data-drop]');
+  if (b && b.dataset.show) show(b.dataset.show);
+  else if (b) dropStaged(b.dataset.drop);
+});
+
+let dragDepth = 0;
+addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; $('drag').classList.add('visible'); });
+addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('drag').classList.remove('visible'); } });
+addEventListener('dragover', e => e.preventDefault());
+addEventListener('drop', async e => {
+  e.preventDefault(); dragDepth = 0; $('drag').classList.remove('visible');
+  const entries = Array.from(e.dataTransfer.items || []).map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  const files = entries.length ? (await Promise.all(entries.map(en => walk(en, '')))).flat() : e.dataTransfer.files;
+  view = 'add'; renderRail(); renderAdd(); send(files);
+});
+
+load();
+</script>
+</body>
+</html>

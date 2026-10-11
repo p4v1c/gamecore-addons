@@ -16,6 +16,9 @@ from pathlib import Path, PurePosixPath
 from identify import KNOWN, md5_of
 from targets import ADDON_DATA_DIR, STAGING, destination, melonds_action
 
+# The DSi NAND holds the DSiWare saves: an existing one is never replaced.
+NEVER_REPLACE = {"dsi_nand.bin"}
+
 MIN_FIRMWARE_NCAS = 30        # a Switch firmware has 200+; a handful of .nca is game content
 BACKUPS = ADDON_DATA_DIR / "backups"
 RYUJINX_APP = "io.github.ryubing.Ryujinx"
@@ -55,6 +58,8 @@ def _write(item: dict, dest: Path, root: Path, system_id: str, stamp: str) -> di
     old = md5_of(dest)
     if old == item["md5"]:
         return {"outcome": "same"}
+    if item["name"] in NEVER_REPLACE:
+        return {"outcome": "kept", "reason": "The DSi NAND already there holds DSi saves. Replace it by hand if you mean to."}
     if _is_verified(old, system_id) and not _is_verified(item["md5"], system_id):
         return {"outcome": "kept", "reason": "The file already there is a verified dump; the upload is not."}
     backup = BACKUPS / stamp / system_id / dest.relative_to(root)
@@ -83,7 +88,7 @@ def place_one(item: dict, system: dict, name: str, core: dict | None, ctx: dict)
     shared state: the timestamp and what this upload already wrote."""
     sid = system["id"]
     dest, root, reason = destination(system, name, core)
-    if dest is None and sid == "melonds":
+    if dest is None and sid == "melonds" and not reason:
         staged = STAGING / sid / name
         _copy(item["path"], staged)
         return {"outcome": "waiting", "dest": str(staged), **melonds_action(name, staged)}
@@ -98,7 +103,7 @@ def place_one(item: dict, system: dict, name: str, core: dict | None, ctx: dict)
     if ctx["written"].get(dest, item["md5"]) != item["md5"]:
         return {"outcome": "ignored", "reason": f"Another file in this upload already went to {dest}."}
     ctx["written"][dest] = item["md5"]
-    result = _write(item, dest, root, sid, ctx["stamp"])
+    result = _write({**item, "name": name}, dest, root, sid, ctx["stamp"])
     result["dest"] = str(dest)
     if note := _pinned_note(system, name, core):
         result["note"] = note

@@ -122,11 +122,17 @@ def destination(system: dict, name: str, core: dict | None) -> tuple[Path | None
     """(destination, the directory it must stay inside, reason when there is none).
 
     melonDS without a configured path gets (None, None, ""): the caller stages it.
+    Everything else without a destination comes with the reason.
     """
     sid = system["id"]
     if sid == "melonds":
         path = melonds_paths(system).get(name)
-        return (path, path.parent, "") if path else (None, None, "")
+        if path is None:
+            return None, None, ""
+        # The path comes from a config file: refuse one pointing outside the owner's data.
+        if not any(r.resolve() in path.resolve().parents for r in (HOME, GAMECORE_DATA)):
+            return None, None, f"melonDS points this file at {path}, outside the home and data folders; left alone."
+        return path, path.parent, ""
     if sid in OWN_DIRS:
         root = own_dir(system)
         return root / name, root, ""

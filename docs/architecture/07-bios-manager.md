@@ -62,6 +62,8 @@ so the addon shows the command instead of running it on the TV.
 - **PCSX2 is pinned to `ps2-0150e-20001228.bin`** by GameCore's seed. Another
   PS2 BIOS is stored beside it and the report says so; the addon never edits
   emulator configs.
+- **The DSi NAND is a save container.** `place.NEVER_REPLACE` keeps an
+  existing one, whatever the upload.
 - **`/tmp` is RAM on the box.** Multipart spill files and the work directory
   live under `$ADDON_DATA_DIR/tmp`.
 - **Azahar 2125 reads no `aes_keys.txt`**: one uploaded is reported as

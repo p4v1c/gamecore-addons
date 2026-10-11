@@ -87,7 +87,9 @@ copy from the system's page once installed.
   `$ADDON_DATA_DIR/backups/<timestamp>/<system>/` before being replaced. A file
   whose md5 is a known dump is never replaced by one that is not.
 - Writes are atomic (temp file, then rename).
-- Saves are never touched: no destination is a save folder.
+- Saves are never touched: no destination is a save folder, and an existing
+  DSi NAND (it holds the DSiWare saves) is never replaced.
+- A melonDS path pointing outside the home and data folders is refused.
 - Work files go to `$ADDON_DATA_DIR/tmp`, not `/tmp` (RAM on the box).
 
 ## API

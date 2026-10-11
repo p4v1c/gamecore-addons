@@ -134,6 +134,23 @@ def test_melonds_configured_path_and_unconfigured_staging(client):
     assert r["bios9.bin"]["outcome"] == "waiting" and "ARM9" in r["bios9.bin"]["action"]
 
 
+def test_existing_dsi_nand_is_never_replaced(client):
+    MELON_TOML.parent.mkdir(parents=True)
+    nand = HOME / "ds/nand.bin"
+    nand.parent.mkdir()
+    nand.write_bytes(b"saves inside")
+    MELON_TOML.write_text(f'[DSi]\nNANDPath = "{nand}"\n')
+    r = upload(client, {"dsi_nand.bin": b"n" * (201 << 20)})[0]
+    assert r["outcome"] == "kept" and nand.read_bytes() == b"saves inside"
+
+
+def test_melonds_path_outside_home_and_data_is_refused(client):
+    MELON_TOML.parent.mkdir(parents=True)
+    MELON_TOML.write_text('[DS]\nBIOS7Path = "/etc/bios7.bin"\n')
+    r = upload(client, {"bios7.bin": b"7" * 16384})[0]
+    assert r["outcome"] == "ignored" and "outside" in r["reason"]
+
+
 def test_gamecube_ipl_needs_a_region_folder(client):
     ipl = b"\0" * (2 << 20)
     r = by_file(upload(client, {"EUR/IPL.bin": ipl, "IPL.bin": ipl}))

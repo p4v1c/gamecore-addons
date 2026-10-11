@@ -76,6 +76,7 @@ async def upload(request: Request):
         raise HTTPException(409, "Another upload is being sorted. Try again when it is done.")
     WORK_ROOT.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(dir=WORK_ROOT))
+    form = None
     try:
         form = await request.form(max_files=MAX_MEMBERS, max_fields=MAX_MEMBERS)
         uploads = []
@@ -87,11 +88,12 @@ async def upload(request: Request):
                 while chunk := await part.read(1 << 20):
                     out.write(chunk)
             uploads.append((clean_rel(part.filename or "") or f"file{i}", dest))
-        await form.close()
         if not uploads:
             raise HTTPException(400, "No file in the upload.")
         return {"results": await run_in_threadpool(_process, uploads, work)}
     finally:
+        if form is not None:
+            await form.close()
         shutil.rmtree(work, ignore_errors=True)
         _busy.release()
 
